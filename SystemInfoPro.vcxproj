@@ -94,6 +94,8 @@
     <ClCompile Include="sensorlog.cpp" />
     <ClCompile Include="manage.cpp" />
     <ClCompile Include="info_summary.cpp" />
+    <ClCompile Include="sensors_all.cpp" />
+    <ClCompile Include="icon.cpp" />
     <ClCompile Include="info_cpu.cpp" />
     <ClCompile Include="info_gpu.cpp" />
     <ClCompile Include="info_ram.cpp" />

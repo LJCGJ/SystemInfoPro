@@ -166,6 +166,13 @@ void LoadStartupDisabled();
 bool AppIniciaComWindows();
 void AppDefinirIniciarComWindows(bool ativar);
 
+// ---------- Icone do app (desenhado em tempo real com GDI) ----------
+HICON CriarIconeApp(int tam);   // liberar com DestroyIcon
+bool SalvarIconeArquivo(const std::wstring& caminho);   // gera app.ico multi-tamanho
+
+// ---------- Central de sensores (LibreHardwareMonitor) ----------
+void LoadAllSensors();
+
 // ---------- NVML (compartilhado entre GPU / sensores / tempo real) ----------
 struct NvmlInfo
 {

@@ -108,6 +108,27 @@ long long Wmi::GetInt(IWbemClassObject* o, const wchar_t* prop, long long padrao
     return res;
 }
 
+double Wmi::GetDouble(IWbemClassObject* o, const wchar_t* prop, double padrao)
+{
+    VARIANT v; VariantInit(&v);
+    double res = padrao;
+    if (SUCCEEDED(o->Get(prop, 0, &v, nullptr, nullptr)) && v.vt != VT_NULL && v.vt != VT_EMPTY)
+    {
+        VARIANT vs; VariantInit(&vs);
+        if (SUCCEEDED(VariantChangeType(&vs, &v, 0, VT_R8)))
+        {
+            res = vs.dblVal;
+            VariantClear(&vs);
+        }
+        else if (v.vt == VT_BSTR && v.bstrVal)
+        {
+            res = _wtof(v.bstrVal);
+        }
+    }
+    VariantClear(&v);
+    return res;
+}
+
 bool Wmi::GetBool(IWbemClassObject* o, const wchar_t* prop, bool padrao)
 {
     VARIANT v; VariantInit(&v);

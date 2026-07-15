@@ -24,6 +24,7 @@ public:
     static std::wstring GetStr (IWbemClassObject* o, const wchar_t* prop);
     static unsigned long long GetUint(IWbemClassObject* o, const wchar_t* prop, unsigned long long padrao = 0);
     static long long GetInt (IWbemClassObject* o, const wchar_t* prop, long long padrao = 0);
+    static double GetDouble(IWbemClassObject* o, const wchar_t* prop, double padrao = 0.0);
     static bool GetBool(IWbemClassObject* o, const wchar_t* prop, bool padrao = false);
     static bool HasValue(IWbemClassObject* o, const wchar_t* prop);
     // Array de uint16 (usado por WmiMonitorID: nomes vem como array de codigos)

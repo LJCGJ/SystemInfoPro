@@ -30,7 +30,7 @@ enum PageId
 {
     PAGE_NONE = 0,
     PAGE_RESUMO,
-    PAGE_GRAPHS, PAGE_REALTIME, PAGE_TEMPS,
+    PAGE_GRAPHS, PAGE_REALTIME, PAGE_TEMPS, PAGE_ALLSENSORS,
     PAGE_CPU, PAGE_BOARD, PAGE_GPU, PAGE_MONITORS, PAGE_RAM,
     PAGE_STORAGE, PAGE_PCI, PAGE_DRIVERS, PAGE_USB, PAGE_AUDIO, PAGE_PRINTERS, PAGE_BATTERY,
     PAGE_OS, PAGE_PROGRAMS, PAGE_STARTUP, PAGE_PROCESSES, PAGE_USERS,
@@ -48,7 +48,7 @@ enum
     IDM_SOBRE = 220,
     IDM_BENCH = 230, IDM_SNAP_CRIAR = 231, IDM_SNAP_COMP = 232,
     IDM_DISK = 233, IDM_NETDIAG = 234, IDM_LOG_INICIAR = 235, IDM_LOG_PARAR = 236,
-    IDM_INICIAR_WIN = 250,
+    IDM_INICIAR_WIN = 250, IDM_GERAR_ICONE = 251,
     IDM_TRAY_RESTAURAR = 240, IDM_TRAY_SAIR = 241
 };
 
@@ -74,6 +74,7 @@ static std::map<int, std::wstring> g_titulos;     // PageId -> rotulo (com icone
 static bool g_escuro = true;                      // tema escuro por padrao
 static bool g_ignorarBusca = false;
 static HBRUSH g_brEdit = nullptr, g_brTitulo = nullptr;
+static HICON g_iconeGrande = nullptr, g_iconePequeno = nullptr;
 static const UINT TIMER_REALTIME = 1;
 static const UINT TIMER_TRAY = 2;
 
@@ -530,6 +531,7 @@ static void ChamarLoader(PageId p)
     case PAGE_RESUMO:   LoadResumo(); break;
     case PAGE_STARTUP_DIS: LoadStartupDisabled(); break;
     case PAGE_TEMPS:    LoadTemperatures(); break;
+    case PAGE_ALLSENSORS: LoadAllSensors(); break;
     case PAGE_CPU:      LoadCPU(); break;
     case PAGE_BOARD:    LoadBoard(); break;
     case PAGE_GPU:      LoadGPU(); break;
@@ -713,7 +715,7 @@ static void TrayCriar()
     g_nid.uID = 1;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    g_nid.hIcon = g_iconePequeno ? g_iconePequeno : LoadIcon(nullptr, IDI_APPLICATION);
     wcscpy_s(g_nid.szTip, L"SystemInfoPro");
     Shell_NotifyIconW(NIM_ADD, &g_nid);
     g_trayCriado = true;
@@ -820,6 +822,7 @@ static void MontarArvore()
     TreeAdd(sensores, L"📈 Graficos de Desempenho", PAGE_GRAPHS);
     TreeAdd(sensores, L"📟 Painel de Monitoramento", PAGE_REALTIME);
     TreeAdd(sensores, L"🌡 Sensores Termicos", PAGE_TEMPS);
+    TreeAdd(sensores, L"🎛 Central de Sensores (Todos)", PAGE_ALLSENSORS);
 
     HTREEITEM hw = TreeAdd(TVI_ROOT, L"🔧 Hardware", PAGE_NONE, true);
     TreeAdd(hw, L"⚙ Processador (CPU)", PAGE_CPU);
@@ -917,6 +920,8 @@ namespace
         }
         else                    // Ajuda
         {
+            AppendMenuW(menu, MF_STRING, IDM_GERAR_ICONE, L"🎨  Gerar arquivo de icone (app.ico)");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, IDM_SOBRE, L"ℹ  Sobre o SystemInfoPro");
         }
 
@@ -1094,6 +1099,12 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         g_hFontBarra = CreateFontW(-15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
             0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
 
+        // Icone proprio (desenhado em tempo real) na janela e barra de tarefas
+        g_iconeGrande = CriarIconeApp(32);
+        g_iconePequeno = CriarIconeApp(16);
+        if (g_iconeGrande)  SendMessageW(h, WM_SETICON, ICON_BIG, (LPARAM)g_iconeGrande);
+        if (g_iconePequeno) SendMessageW(h, WM_SETICON, ICON_SMALL, (LPARAM)g_iconePequeno);
+
         g_hBarra = CriarBarra(h);
 
         g_hTree = CreateWindowExW(0, WC_TREEVIEWW, L"",
@@ -1224,6 +1235,31 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
                 L"SystemInfoPro agora inicia junto com o Windows\n(minimizado na bandeja)." :
                 L"SystemInfoPro nao inicia mais automaticamente com o Windows.",
                 L"Iniciar com o Windows", MB_ICONINFORMATION);
+            break;
+        }
+        case IDM_GERAR_ICONE:
+        {
+            wchar_t caminho[MAX_PATH] = L"app.ico";
+            OPENFILENAMEW ofn{};
+            ofn.lStructSize = sizeof(ofn);
+            ofn.hwndOwner = h;
+            ofn.lpstrFilter = L"Icone do Windows (*.ico)\0*.ico\0";
+            ofn.lpstrFile = caminho;
+            ofn.nMaxFile = MAX_PATH;
+            ofn.lpstrDefExt = L"ico";
+            ofn.lpstrTitle = L"Salvar app.ico (para o instalador / recurso do .exe)";
+            ofn.Flags = OFN_OVERWRITEPROMPT;
+            if (GetSaveFileNameW(&ofn))
+            {
+                bool ok = SalvarIconeArquivo(caminho);
+                MessageBoxW(h, ok ?
+                    L"app.ico gerado com sucesso!\n\n"
+                    L"Para embutir no .exe: coloque o app.ico na pasta do projeto,\n"
+                    L"descomente a linha 'IDI_APP ICON' no arquivo app.rc e recompile.\n"
+                    L"O Inno Setup usara esse icone nos atalhos automaticamente." :
+                    L"Falha ao gerar o arquivo de icone.",
+                    ok ? L"Sucesso" : L"Erro", ok ? MB_ICONINFORMATION : MB_ICONERROR);
+            }
             break;
         }
         case IDM_ATUALIZAR:   if (g_paginaAtual != PAGE_NONE) CarregarPagina(g_paginaAtual); break;
@@ -1373,6 +1409,8 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         if (g_hFontBarra) DeleteObject(g_hFontBarra);
         if (g_brEdit) DeleteObject(g_brEdit);
         if (g_brTitulo) DeleteObject(g_brTitulo);
+        if (g_iconeGrande) DestroyIcon(g_iconeGrande);
+        if (g_iconePequeno) DestroyIcon(g_iconePequeno);
         PostQuitMessage(0);
         return 0;
     }

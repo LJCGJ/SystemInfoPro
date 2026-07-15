@@ -116,10 +116,7 @@ void LoadTemperatures()
         [&](IWbemClassObject* o)
         {
             Cabecalho();
-            double v = (double)Wmi::GetInt(o, L"Value", -1);
-            // Value e float no WMI do LHM; le como string se necessario
-            std::wstring vs = Wmi::GetStr(o, L"Value");
-            if (!vs.empty()) v = _wtof(vs.c_str());
+            double v = Wmi::GetDouble(o, L"Value", -1);
             if (v > 0 && v < 150)
             {
                 AddRow(Wmi::GetStr(o, L"Parent") + L" | " + Wmi::GetStr(o, L"Name"),
@@ -132,8 +129,7 @@ void LoadTemperatures()
         [&](IWbemClassObject* o)
         {
             Cabecalho();
-            std::wstring vs = Wmi::GetStr(o, L"Value");
-            double v = vs.empty() ? 0 : _wtof(vs.c_str());
+            double v = Wmi::GetDouble(o, L"Value", 0);
             if (v > 0)
                 AddRow(Wmi::GetStr(o, L"Parent") + L" | Cooler: " + Wmi::GetStr(o, L"Name"),
                        NumW(v, 0) + L" RPM");
@@ -143,8 +139,7 @@ void LoadTemperatures()
         [&](IWbemClassObject* o)
         {
             Cabecalho();
-            std::wstring vs = Wmi::GetStr(o, L"Value");
-            double v = vs.empty() ? 0 : _wtof(vs.c_str());
+            double v = Wmi::GetDouble(o, L"Value", 0);
             if (v > 0)
                 AddRow(Wmi::GetStr(o, L"Parent") + L" | Tensao: " + Wmi::GetStr(o, L"Name"),
                        NumW(v, 3) + L" V");

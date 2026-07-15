@@ -68,6 +68,18 @@ Botão **Exportar Relatório (.txt)** salva a tela atual em UTF-8.
 | `sensorlog.cpp` | Log histórico de sensores em CSV |
 | `manage.cpp` | Gerenciamento ativo (finalizar processo, serviços, inicialização, reabilitar) |
 | `info_summary.cpp` | Resumo do Sistema (dashboard) e opção "Iniciar com o Windows" |
+| `sensors_all.cpp` | Central de Sensores completa (todos os componentes via LibreHardwareMonitor) |
+| `icon.cpp` | Ícone do app desenhado em tempo real com GDI (janela, barra de tarefas, bandeja) |
+| `icon.svg` | Versão vetorial do ícone (para o repositório GitHub) |
+
+## Novidades da versão 2.2
+
+- **🎨 Ícone próprio**: monitor com gráfico ascendente em azul, desenhado em tempo real — aparece na janela, na barra de tarefas e na bandeja, sem precisar de arquivo externo. Uma versão SVG acompanha o projeto.
+- **🎛 Central de Sensores (Todos)**: nova categoria que lista **todos** os sensores de **todos** os componentes — temperatura do processador (por núcleo), chipset, VRM, memória (quando há sensor), tensões, ventoinhas, potência, clocks e uso — agrupados por peça. Requer o LibreHardwareMonitor aberto (gratuito), e o app lê tudo dele via WMI sem instalar driver próprio.
+
+### Por que preciso do LibreHardwareMonitor para as temperaturas?
+
+O Windows **não expõe** as temperaturas de CPU, chipset, VRM e memória por API oficial — lê-las exige um driver em modo kernel assinado (o mesmo motivo pelo qual HWiNFO e AIDA64 instalam um driver). Como o SystemInfoPro é open source e não assina driver, ele lê esses sensores do LibreHardwareMonitor (também gratuito e open source) quando ele está rodando. Basta abri-lo como Administrador e todos os sensores aparecem automaticamente aqui.
 
 ## Novidades da versão 2.1
 

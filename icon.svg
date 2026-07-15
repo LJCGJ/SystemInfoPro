@@ -1,0 +1,36 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#005a9e"/>
+    </linearGradient>
+    <linearGradient id="graph" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ee6a0"/>
+      <stop offset="1" stop-color="#7cf3c4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- fundo arredondado -->
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="url(#bg)"/>
+
+  <!-- moldura do monitor -->
+  <rect x="48" y="56" width="160" height="118" rx="14" fill="#ffffff"/>
+  <!-- tela -->
+  <rect x="60" y="68" width="136" height="94" rx="6" fill="#12121f"/>
+
+  <!-- grade sutil -->
+  <g stroke="#2a2a44" stroke-width="2">
+    <line x1="60" y1="99" x2="196" y2="99"/>
+    <line x1="60" y1="130" x2="196" y2="130"/>
+  </g>
+
+  <!-- linha de grafico ascendente -->
+  <polyline points="70,148 100,120 124,134 152,96 190,80"
+            fill="none" stroke="url(#graph)" stroke-width="9"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="190" cy="80" r="7" fill="#7cf3c4"/>
+
+  <!-- base do monitor -->
+  <rect x="116" y="174" width="24" height="20" fill="#ffffff"/>
+  <rect x="92" y="194" width="72" height="14" rx="6" fill="#ffffff"/>
+</svg>

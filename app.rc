@@ -3,12 +3,15 @@
 //  Informacoes de versao do executavel (aparece nas Propriedades
 //  do arquivo no Windows Explorer)
 //
-//  Para adicionar um icone proprio: coloque um arquivo "app.ico"
-//  nesta pasta e descomente a linha IDI_APP abaixo.
+//  Para o icone aparecer no Windows Explorer e nos atalhos:
+//   1. No app, use o menu Ajuda -> "Gerar arquivo de icone (app.ico)"
+//      e salve "app.ico" nesta pasta.
+//   2. Descomente a linha abaixo (remova as duas barras //) e recompile.
+//  O ID numerico 1 garante que o Windows use este como icone do .exe.
 // ============================================================
 #include <windows.h>
 
-// IDI_APP ICON "app.ico"
+// 1 ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     2,0,0,0
