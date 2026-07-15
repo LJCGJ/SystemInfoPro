@@ -4,6 +4,7 @@
 // ============================================================
 #include "common.h"
 #include "wmi.h"
+#include <cstdlib>
 
 // ================= Placa-Mae e BIOS =================
 void LoadBoard()
@@ -89,7 +90,70 @@ void LoadTemperatures()
         }
     });
 
-    // 3) Temperatura de discos aparece na aba "Armazenamento e SMART"
+    // 3) LibreHardwareMonitor / OpenHardwareMonitor (deteccao automatica)
+    //    Se um deles estiver aberto, expoe TODOS os sensores via WMI:
+    //    temperatura por nucleo da CPU, tensoes, RPM dos coolers etc.
+    bool lhmAtivo = false;
+    const wchar_t* espacos[] = { L"ROOT\\LibreHardwareMonitor", L"ROOT\\OpenHardwareMonitor" };
+    for (const wchar_t* ns : espacos)
+    {
+        Wmi lhm(ns);
+        if (!lhm.Ok()) continue;
+
+        bool primeiraLinha = true;
+        auto Cabecalho = [&]()
+        {
+            if (primeiraLinha)
+            {
+                AddBlank();
+                AddSection(L"SENSORES COMPLETOS (LibreHardwareMonitor detectado)");
+                primeiraLinha = false;
+                lhmAtivo = true;
+            }
+        };
+
+        lhm.Query(L"SELECT Name, Parent, Value FROM Sensor WHERE SensorType='Temperature'",
+        [&](IWbemClassObject* o)
+        {
+            Cabecalho();
+            double v = (double)Wmi::GetInt(o, L"Value", -1);
+            // Value e float no WMI do LHM; le como string se necessario
+            std::wstring vs = Wmi::GetStr(o, L"Value");
+            if (!vs.empty()) v = _wtof(vs.c_str());
+            if (v > 0 && v < 150)
+            {
+                AddRow(Wmi::GetStr(o, L"Parent") + L" | " + Wmi::GetStr(o, L"Name"),
+                       NumW(v, 1) + L" °C");
+                achados++;
+            }
+        });
+
+        lhm.Query(L"SELECT Name, Parent, Value FROM Sensor WHERE SensorType='Fan'",
+        [&](IWbemClassObject* o)
+        {
+            Cabecalho();
+            std::wstring vs = Wmi::GetStr(o, L"Value");
+            double v = vs.empty() ? 0 : _wtof(vs.c_str());
+            if (v > 0)
+                AddRow(Wmi::GetStr(o, L"Parent") + L" | Cooler: " + Wmi::GetStr(o, L"Name"),
+                       NumW(v, 0) + L" RPM");
+        });
+
+        lhm.Query(L"SELECT Name, Parent, Value FROM Sensor WHERE SensorType='Voltage'",
+        [&](IWbemClassObject* o)
+        {
+            Cabecalho();
+            std::wstring vs = Wmi::GetStr(o, L"Value");
+            double v = vs.empty() ? 0 : _wtof(vs.c_str());
+            if (v > 0)
+                AddRow(Wmi::GetStr(o, L"Parent") + L" | Tensao: " + Wmi::GetStr(o, L"Name"),
+                       NumW(v, 3) + L" V");
+        });
+
+        if (lhmAtivo) break;   // ja achou um dos dois programas
+    }
+
+    // 4) Temperatura de discos aparece na aba "Armazenamento e SMART"
     AddBlank();
     AddRow(L"Temperatura dos Discos", L"Veja a categoria 'Armazenamento e SMART' (atributo 194 / NVMe).");
 
@@ -97,8 +161,14 @@ void LoadTemperatures()
     {
         AddBlank();
         AddRow(L"Status de Leitura Termica", L"Nenhum sensor acessivel pelas APIs padrao do Windows.");
-        AddRow(L"Restricao Tecnica", L"A leitura direta do silicio da CPU exige um driver em modo kernel "
-               L"(como o usado por HWiNFO/LibreHardwareMonitor). Execute como Administrador para mais leituras.");
+        AddRow(L"Restricao Tecnica", L"A leitura direta do silicio da CPU exige um driver em modo kernel.");
+    }
+    if (!lhmAtivo)
+    {
+        AddBlank();
+        AddRow(L"Dica para Sensores Completos",
+               L"Abra o LibreHardwareMonitor (gratuito) junto com este programa: "
+               L"as temperaturas por nucleo da CPU, tensoes e coolers aparecerao aqui automaticamente.");
     }
 }
 
@@ -243,4 +313,3 @@ void LoadBattery()
             AddRow(L"Diagnostico de Saude", L"Nao disponivel para este equipamento.");
     }
 }
-//LJCGJ

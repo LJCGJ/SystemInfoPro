@@ -83,6 +83,33 @@ void LoadUsers();
 // ---------- Modulos: Rede ----------
 void LoadNetwork();        // adaptadores (estatico)
 void LoadTcpConnections(); // conexoes TCP ativas
+void LoadShares();         // compartilhamentos de rede
+
+// ---------- Modulos: Extras ----------
+void LoadPCI();            // dispositivos PCI
+void LoadHotfixes();       // atualizacoes do Windows
+void LoadEnvVars();        // variaveis de ambiente
+void LoadDrivers();        // drivers de sistema (kernel)
+void LoadSecurity();       // antivirus, firewall, TPM, Secure Boot, UAC
+void LoadTasks();          // tarefas agendadas
+void LoadDirectX();        // DirectX e codecs
+
+// ---------- Metricas compartilhadas (texto + graficos) ----------
+struct Metricas
+{
+    int    cpuPct = -1;    // -1 = ainda sem amostra
+    double gpuPct = -1;
+    int    ramPct = -1;
+    double downBps = -1;
+    double upBps   = -1;
+};
+void AmostrarMetricas(Metricas& m);
+
+// ---------- Janela de graficos ----------
+HWND CriarJanelaGraficos(HWND pai);
+void GraficosTick(HWND hGraficos);        // amostra + redesenha
+void GraficosDefinirTema(bool escuro);
+void GraficosResetar();
 
 // ---------- NVML (compartilhado entre GPU / sensores / tempo real) ----------
 struct NvmlInfo

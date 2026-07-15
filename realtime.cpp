@@ -182,6 +182,25 @@ static std::wstring BarraTexto(int pct)
     return b + L"  " + NumW(pct) + L"%";
 }
 
+// ---------------- Amostrador compartilhado (usado pelos graficos) ----------------
+void AmostrarMetricas(Metricas& m)
+{
+    m.cpuPct = MedirCpuTotal();
+
+    MEMORYSTATUSEX mem{ sizeof(mem) };
+    if (GlobalMemoryStatusEx(&mem))
+        m.ramPct = (int)mem.dwMemoryLoad;
+
+    m.gpuPct = MedirGpuPdh();
+    if (m.gpuPct < 0)
+    {
+        NvmlInfo nv;
+        if (NvmlConsultar(nv)) m.gpuPct = (double)nv.usoGpuPct;
+    }
+
+    MedirRede(m.downBps, m.upBps);
+}
+
 // ---------------- Tela de tempo real ----------------
 void LoadRealtime()
 {

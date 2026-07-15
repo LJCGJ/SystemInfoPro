@@ -84,6 +84,9 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="wmi.cpp" />
     <ClCompile Include="realtime.cpp" />
+    <ClCompile Include="graphs.cpp" />
+    <ClCompile Include="info_extra.cpp" />
+    <ClCompile Include="info_extra2.cpp" />
     <ClCompile Include="info_cpu.cpp" />
     <ClCompile Include="info_gpu.cpp" />
     <ClCompile Include="info_ram.cpp" />

@@ -58,3 +58,15 @@ Botão **Exportar Relatório (.txt)** salva a tela atual em UTF-8.
 | `info_storage.cpp` | Discos, SMART ATA, saúde NVMe, volumes |
 | `info_network.cpp` | Adaptadores e conexões TCP |
 | `info_software.cpp` | SO, programas, inicialização, processos, serviços, usuários |
+| `graphs.cpp` | Gráficos de desempenho em tempo real (GDI) |
+| `info_extra.cpp` | PCI, hotfixes, variáveis de ambiente, compartilhamentos |
+| `info_extra2.cpp` | Drivers, segurança (AV/TPM/Secure Boot), tarefas agendadas, DirectX/codecs |
+
+## Recursos da interface
+
+- **Busca**: campo no topo filtra a categoria atual em tempo real.
+- **Ordenação**: clique no cabeçalho das colunas para ordenar (clique de novo inverte).
+- **Copiar**: botão direito em qualquer linha → copiar linha, valor ou tudo.
+- **Tema Escuro/Claro**: botão na parte inferior esquerda.
+- **Exportar**: TXT ou HTML formatado.
+- **Sensores completos**: se o LibreHardwareMonitor estiver aberto, as temperaturas por núcleo da CPU, tensões e RPM dos coolers aparecem automaticamente em "Sensores Térmicos".
