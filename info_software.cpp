@@ -150,7 +150,7 @@ void LoadStartup()
     {
         std::wstring nome = Wmi::GetStr(o, L"Name");
         if (nome.empty()) return;
-        AddRow(L"Entrada " + NumW(contador) + L": " + nome, Wmi::GetStr(o, L"Command"));
+        AddActionRow(L"Entrada " + NumW(contador) + L": " + nome, Wmi::GetStr(o, L"Command"), 3, nome);
         std::wstring local = Wmi::GetStr(o, L"Location");
         if (!local.empty()) AddRow(L"  Origem do Gatilho", local);
         std::wstring usuario = Wmi::GetStr(o, L"User");
@@ -195,14 +195,16 @@ void LoadProcesses()
         [](const Proc& a, const Proc& b) { return a.ram > b.ram; });
 
     AddRow(L"Total de Processos Ativos", NumW((int)procs.size()));
+    AddRow(L"Dica", L"Clique com o botao direito em um processo para finaliza-lo.");
     AddBlank();
     AddRow(L"NOME DO PROCESSO (PID)", L"USO DE RECURSOS (RAM E THREADS)");
     int mostrados = 0;
     for (const auto& p : procs)
     {
         if (mostrados++ >= 60) break;
-        AddRow(p.nome + L"  (" + NumW(p.pid) + L")",
-               FormatBytes(p.ram) + L" RAM  |  " + NumW(p.threads) + L" Threads");
+        AddActionRow(p.nome + L"  (" + NumW(p.pid) + L")",
+               FormatBytes(p.ram) + L" RAM  |  " + NumW(p.threads) + L" Threads",
+               1, NumW(p.pid));
     }
 }
 
@@ -237,6 +239,7 @@ void LoadServices()
 
     AddRow(L"Servicos em Execucao (Ativos)", NumW(ativos));
     AddRow(L"Servicos Parados (Inativos)", NumW(inativos));
+    AddRow(L"Dica", L"Clique com o botao direito em um servico para inicia-lo ou para-lo.");
     AddBlank();
     AddRow(L"NOME DO SERVICO", L"STATUS E MODO DE INICIALIZACAO");
 
@@ -279,7 +282,8 @@ void LoadServices()
             CloseServiceHandle(sv);
         }
 
-        AddRow(servicos[i].lpDisplayName, estado + L"  (Modo: " + modo + L")");
+        AddActionRow(servicos[i].lpDisplayName, estado + L"  (Modo: " + modo + L")",
+                     2, servicos[i].lpDisplayName);
     }
     CloseServiceHandle(scm);
 }

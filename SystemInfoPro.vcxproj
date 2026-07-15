@@ -89,6 +89,11 @@
     <ClCompile Include="info_extra2.cpp" />
     <ClCompile Include="benchmark.cpp" />
     <ClCompile Include="snapshot.cpp" />
+    <ClCompile Include="diskanalyzer.cpp" />
+    <ClCompile Include="netdiag.cpp" />
+    <ClCompile Include="sensorlog.cpp" />
+    <ClCompile Include="manage.cpp" />
+    <ClCompile Include="info_summary.cpp" />
     <ClCompile Include="info_cpu.cpp" />
     <ClCompile Include="info_gpu.cpp" />
     <ClCompile Include="info_ram.cpp" />

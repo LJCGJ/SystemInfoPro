@@ -63,6 +63,27 @@ Botão **Exportar Relatório (.txt)** salva a tela atual em UTF-8.
 | `info_extra2.cpp` | Drivers, segurança (AV/TPM/Secure Boot), tarefas agendadas, DirectX/codecs |
 | `benchmark.cpp` | Benchmark de CPU, RAM e disco (roda em thread separada) |
 | `snapshot.cpp` | Snapshot do sistema e comparação (o que mudou) |
+| `diskanalyzer.cpp` | Analisador de espaço em disco (maiores pastas/arquivos) |
+| `netdiag.cpp` | Diagnóstico de rede (ping, DNS, IP externo, qualidade) |
+| `sensorlog.cpp` | Log histórico de sensores em CSV |
+| `manage.cpp` | Gerenciamento ativo (finalizar processo, serviços, inicialização, reabilitar) |
+| `info_summary.cpp` | Resumo do Sistema (dashboard) e opção "Iniciar com o Windows" |
+
+## Novidades da versão 2.1
+
+- **🏠 Resumo do Sistema**: dashboard aberto ao iniciar, com SO, CPU, RAM, GPU, disco, uptime e atalhos.
+- **🚫 Inicialização Desabilitada**: lista os itens desabilitados pelo app; botão direito para reabilitar (o "desabilitar" agora tem volta).
+- **🔁 Iniciar com o Windows**: opção no menu Exibir para o próprio app iniciar minimizado na bandeja.
+- **Correções de estabilidade**: o Analisador de Disco agora roda em segundo plano (não trava mais a janela), com suporte a caminhos longos e proteção contra recursão profunda; benchmark, rede e disco encerram suas threads com segurança ao fechar o programa.
+
+## Ferramentas ativas (menu Ferramentas + categoria "Ferramentas")
+
+- **🚀 Benchmark**: CPU single/multi-thread, RAM e disco, com referências para comparar.
+- **📊 Analisador de Disco**: escaneia uma pasta/unidade e mostra as maiores pastas e arquivos.
+- **🌐 Diagnóstico de Rede**: ping/latência a vários servidores, DNS, IP público e avaliação da conexão.
+- **📸 Snapshot**: salve o estado do sistema e compare depois (o que mudou).
+- **⏺ Log de Sensores**: grava CPU/RAM/GPU/temperatura/rede em CSV ao longo do tempo.
+- **Gerenciamento ativo**: clique com o botão direito em processos (finalizar), serviços (iniciar/parar) e itens de inicialização (desabilitar). Todas as ações pedem confirmação e há proteção para processos críticos do Windows.
 | `app.rc` | Informações de versão do executável |
 | `LICENSE` / `README-GITHUB.md` | Kit para publicar no GitHub (MIT, bilíngue) |
 

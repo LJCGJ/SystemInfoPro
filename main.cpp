@@ -29,13 +29,14 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 enum PageId
 {
     PAGE_NONE = 0,
+    PAGE_RESUMO,
     PAGE_GRAPHS, PAGE_REALTIME, PAGE_TEMPS,
     PAGE_CPU, PAGE_BOARD, PAGE_GPU, PAGE_MONITORS, PAGE_RAM,
     PAGE_STORAGE, PAGE_PCI, PAGE_DRIVERS, PAGE_USB, PAGE_AUDIO, PAGE_PRINTERS, PAGE_BATTERY,
     PAGE_OS, PAGE_PROGRAMS, PAGE_STARTUP, PAGE_PROCESSES, PAGE_USERS,
-    PAGE_SERVICES, PAGE_HOTFIX, PAGE_ENV, PAGE_SECURITY, PAGE_TASKS, PAGE_DIRECTX,
+    PAGE_SERVICES, PAGE_HOTFIX, PAGE_ENV, PAGE_SECURITY, PAGE_TASKS, PAGE_DIRECTX, PAGE_STARTUP_DIS,
     PAGE_NETWORK, PAGE_TCP, PAGE_SHARES,
-    PAGE_BENCH, PAGE_SNAP
+    PAGE_BENCH, PAGE_SNAP, PAGE_DISK, PAGE_NETDIAG, PAGE_SENSORLOG
 };
 
 // ---------------- IDs de comandos ----------------
@@ -46,6 +47,8 @@ enum
     IDM_TEMA = 210, IDM_ATUALIZAR = 211,
     IDM_SOBRE = 220,
     IDM_BENCH = 230, IDM_SNAP_CRIAR = 231, IDM_SNAP_COMP = 232,
+    IDM_DISK = 233, IDM_NETDIAG = 234, IDM_LOG_INICIAR = 235, IDM_LOG_PARAR = 236,
+    IDM_INICIAR_WIN = 250,
     IDM_TRAY_RESTAURAR = 240, IDM_TRAY_SAIR = 241
 };
 
@@ -58,7 +61,15 @@ static HWND g_hBarra = nullptr, g_hTitulo = nullptr, g_hStatus = nullptr;
 static HFONT g_hFont = nullptr, g_hFontBusca = nullptr, g_hFontTitulo = nullptr, g_hFontBarra = nullptr;
 static PageId g_paginaAtual = PAGE_NONE;
 static std::map<std::wstring, int> g_chavesTempoReal;
-static std::vector<std::pair<std::wstring, std::wstring>> g_dados;
+
+// Cada linha guarda propriedade, valor e (opcional) uma acao de gerenciamento.
+struct LinhaDado
+{
+    std::wstring prop, val;
+    int tipoAcao = 0;          // 0=nenhuma, 1=processo, 2=servico, 3=startup
+    std::wstring meta;         // PID / DisplayName / nome
+};
+static std::vector<LinhaDado> g_dados;
 static std::map<int, std::wstring> g_titulos;     // PageId -> rotulo (com icone)
 static bool g_escuro = true;                      // tema escuro por padrao
 static bool g_ignorarBusca = false;
@@ -108,7 +119,13 @@ static void ListInsert(const std::wstring& c0, const std::wstring& c1)
 
 void AddRow(const std::wstring& prop, const std::wstring& val)
 {
-    g_dados.push_back({ prop, val });
+    g_dados.push_back({ prop, val, 0, L"" });
+    ListInsert(prop, val);
+}
+void AddActionRow(const std::wstring& prop, const std::wstring& val,
+                  int tipoAcao, const std::wstring& meta)
+{
+    g_dados.push_back({ prop, val, tipoAcao, meta });
     ListInsert(prop, val);
 }
 void AddSection(const std::wstring& title) { AddRow(L"--- " + title + L" ---", L""); }
@@ -154,11 +171,11 @@ static void RefiltrarLista()
     for (const auto& linha : g_dados)
     {
         if (f.empty() ||
-            Minusculas(linha.first).find(f) != std::wstring::npos ||
-            Minusculas(linha.second).find(f) != std::wstring::npos)
+            Minusculas(linha.prop).find(f) != std::wstring::npos ||
+            Minusculas(linha.val).find(f) != std::wstring::npos)
         {
-            if (f.empty() || !linha.first.empty() || !linha.second.empty())
-                ListInsert(linha.first, linha.second);
+            if (f.empty() || !linha.prop.empty() || !linha.val.empty())
+                ListInsert(linha.prop, linha.val);
         }
     }
     SendMessageW(g_hList, WM_SETREDRAW, TRUE, 0);
@@ -182,14 +199,13 @@ static void OrdenarPorColuna(int coluna)
     g_colOrdenada = coluna;
 
     std::stable_sort(g_dados.begin(), g_dados.end(),
-        [coluna](const std::pair<std::wstring, std::wstring>& a,
-                 const std::pair<std::wstring, std::wstring>& b)
+        [coluna](const LinhaDado& a, const LinhaDado& b)
     {
-        bool va = a.first.empty() && a.second.empty();
-        bool vb = b.first.empty() && b.second.empty();
+        bool va = a.prop.empty() && a.val.empty();
+        bool vb = b.prop.empty() && b.val.empty();
         if (va != vb) return vb;
-        const std::wstring& ca = (coluna == 0) ? a.first : a.second;
-        const std::wstring& cb = (coluna == 0) ? b.first : b.second;
+        const std::wstring& ca = (coluna == 0) ? a.prop : a.val;
+        const std::wstring& cb = (coluna == 0) ? b.prop : b.val;
         int cmp = _wcsicmp(ca.c_str(), cb.c_str());
         return g_ordemAsc ? (cmp < 0) : (cmp > 0);
     });
@@ -197,6 +213,8 @@ static void OrdenarPorColuna(int coluna)
 }
 
 // ================= Menu de contexto (copiar) =================
+static void CarregarPagina(PageId p);   // forward
+
 static void CopiarParaClipboard(const std::wstring& texto)
 {
     if (!OpenClipboard(g_hMain)) return;
@@ -212,9 +230,23 @@ static void CopiarParaClipboard(const std::wstring& texto)
     CloseClipboard();
 }
 
+// Encontra a linha em g_dados que corresponde ao item selecionado (texto identico)
+static const LinhaDado* AcharLinhaSelecionada(int sel)
+{
+    if (sel < 0) return nullptr;
+    wchar_t c0[512] = {}, c1[1024] = {};
+    ListView_GetItemText(g_hList, sel, 0, c0, 512);
+    ListView_GetItemText(g_hList, sel, 1, c1, 1024);
+    std::wstring p = c0, v = c1;
+    for (const auto& l : g_dados)
+        if (l.prop == p && l.val == v) return &l;
+    return nullptr;
+}
+
 static void MenuContextoLista()
 {
     int sel = ListView_GetNextItem(g_hList, -1, LVNI_SELECTED);
+    const LinhaDado* linha = AcharLinhaSelecionada(sel);
 
     HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING | (sel < 0 ? MF_GRAYED : 0), 1, L"📄  Copiar Linha");
@@ -222,10 +254,40 @@ static void MenuContextoLista()
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, 3, L"📋  Copiar Tudo (categoria atual)");
 
+    // Acoes de gerenciamento ativo, conforme o tipo da linha
+    if (linha && linha->tipoAcao != 0)
+    {
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        if (linha->tipoAcao == 1)
+            AppendMenuW(menu, MF_STRING, 10, L"🛑  Finalizar este Processo");
+        else if (linha->tipoAcao == 2)
+        {
+            AppendMenuW(menu, MF_STRING, 11, L"▶  Iniciar Servico");
+            AppendMenuW(menu, MF_STRING, 12, L"⏹  Parar Servico");
+        }
+        else if (linha->tipoAcao == 3)
+            AppendMenuW(menu, MF_STRING, 13, L"🚫  Desabilitar na Inicializacao");
+        else if (linha->tipoAcao == 4)
+            AppendMenuW(menu, MF_STRING, 14, L"✅  Reabilitar na Inicializacao");
+    }
+
     POINT pt; GetCursorPos(&pt);
     int cmd = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, pt.x, pt.y, 0, g_hMain, nullptr);
     DestroyMenu(menu);
     if (cmd == 0) return;
+
+    // ---- Acoes de gerenciamento ----
+    if (cmd >= 10 && linha)
+    {
+        bool mudou = false;
+        if (cmd == 10)      mudou = GerenciarFinalizarProcesso(g_hMain, (DWORD)_wtoi(linha->meta.c_str()), linha->prop);
+        else if (cmd == 11) mudou = GerenciarServico(g_hMain, linha->meta, true);
+        else if (cmd == 12) mudou = GerenciarServico(g_hMain, linha->meta, false);
+        else if (cmd == 13) mudou = GerenciarDesabilitarStartup(g_hMain, linha->meta);
+        else if (cmd == 14) mudou = GerenciarReabilitarStartup(g_hMain, linha->meta);
+        if (mudou && g_paginaAtual != PAGE_NONE) CarregarPagina(g_paginaAtual);
+        return;
+    }
 
     wchar_t c0[512], c1[1024];
     if (cmd == 1 && sel >= 0)
@@ -465,6 +527,8 @@ static void ChamarLoader(PageId p)
 {
     switch (p)
     {
+    case PAGE_RESUMO:   LoadResumo(); break;
+    case PAGE_STARTUP_DIS: LoadStartupDisabled(); break;
     case PAGE_TEMPS:    LoadTemperatures(); break;
     case PAGE_CPU:      LoadCPU(); break;
     case PAGE_BOARD:    LoadBoard(); break;
@@ -494,6 +558,9 @@ static void ChamarLoader(PageId p)
     case PAGE_SHARES:   LoadShares(); break;
     case PAGE_BENCH:    LoadBenchmark(); break;
     case PAGE_SNAP:     LoadSnapshotInfo(); break;
+    case PAGE_DISK:     LoadDiskAnalyzer(); break;
+    case PAGE_NETDIAG:  LoadNetDiag(); break;
+    case PAGE_SENSORLOG:LoadSensorLog(); break;
     default: break;
     }
 }
@@ -609,8 +676,8 @@ static void ExportarRelatorioCompleto()
         EscreverUtf8(h, L"<h2>" + EscapeHtml(titulo) + L"</h2>\n<table>\n");
         for (const auto& linha : g_dados)
         {
-            const std::wstring& prop = linha.first;
-            const std::wstring& val = linha.second;
+            const std::wstring& prop = linha.prop;
+            const std::wstring& val = linha.val;
             if (prop.empty() && val.empty()) continue;
             if (prop.size() > 6 && prop.substr(0, 4) == L"--- ")
             {
@@ -747,6 +814,8 @@ static HTREEITEM TreeAdd(HTREEITEM pai, const wchar_t* texto, PageId pagina, boo
 
 static void MontarArvore()
 {
+    TreeAdd(TVI_ROOT, L"🏠 Resumo do Sistema", PAGE_RESUMO, true);
+
     HTREEITEM sensores = TreeAdd(TVI_ROOT, L"⚡ Sensores em Tempo Real", PAGE_NONE, true);
     TreeAdd(sensores, L"📈 Graficos de Desempenho", PAGE_GRAPHS);
     TreeAdd(sensores, L"📟 Painel de Monitoramento", PAGE_REALTIME);
@@ -778,6 +847,7 @@ static void MontarArvore()
     TreeAdd(sw, L"🛡 Seguranca (Antivirus / TPM)", PAGE_SECURITY);
     TreeAdd(sw, L"⏰ Tarefas Agendadas", PAGE_TASKS);
     TreeAdd(sw, L"🎬 DirectX e Codecs", PAGE_DIRECTX);
+    TreeAdd(sw, L"🚫 Inicializacao Desabilitada", PAGE_STARTUP_DIS);
 
     HTREEITEM rede = TreeAdd(TVI_ROOT, L"🌐 Rede", PAGE_NONE, true);
     TreeAdd(rede, L"📡 Adaptadores de Conexao", PAGE_NETWORK);
@@ -786,7 +856,10 @@ static void MontarArvore()
 
     HTREEITEM ferr = TreeAdd(TVI_ROOT, L"🧪 Ferramentas", PAGE_NONE, true);
     TreeAdd(ferr, L"🚀 Benchmark do Sistema", PAGE_BENCH);
+    TreeAdd(ferr, L"📊 Analisador de Disco", PAGE_DISK);
+    TreeAdd(ferr, L"🌐 Diagnostico de Rede", PAGE_NETDIAG);
     TreeAdd(ferr, L"📸 Snapshot e Comparacao", PAGE_SNAP);
+    TreeAdd(ferr, L"⏺ Log de Sensores (CSV)", PAGE_SENSORLOG);
 
     HTREEITEM raiz = TreeView_GetRoot(g_hTree);
     while (raiz)
@@ -821,14 +894,26 @@ namespace
             AppendMenuW(menu, MF_STRING, IDM_TEMA,
                 g_escuro ? L"☀  Mudar para Tema Claro" : L"🌙  Mudar para Tema Escuro");
             AppendMenuW(menu, MF_STRING, IDM_ATUALIZAR, L"🔄  Atualizar Categoria\tF5");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_STRING | (AppIniciaComWindows() ? MF_CHECKED : 0),
+                        IDM_INICIAR_WIN, L"🔁  Iniciar com o Windows");
         }
         else if (indice == 2)   // Ferramentas
         {
             AppendMenuW(menu, MF_STRING | (BenchmarkEmExecucao() ? MF_GRAYED : 0),
                         IDM_BENCH, L"🚀  Executar Benchmark");
+            AppendMenuW(menu, MF_STRING | (DiskAnalyzerEmExecucao() ? MF_GRAYED : 0),
+                        IDM_DISK, L"📊  Analisar Espaco em Disco...");
+            AppendMenuW(menu, MF_STRING | (NetDiagEmExecucao() ? MF_GRAYED : 0),
+                        IDM_NETDIAG, L"🌐  Diagnostico de Rede");
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, IDM_SNAP_CRIAR, L"📸  Criar Snapshot do Sistema...");
             AppendMenuW(menu, MF_STRING, IDM_SNAP_COMP, L"🔍  Comparar com Snapshot...");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            if (SensorLogAtivo())
+                AppendMenuW(menu, MF_STRING, IDM_LOG_PARAR, L"⏹  Parar Log de Sensores");
+            else
+                AppendMenuW(menu, MF_STRING, IDM_LOG_INICIAR, L"⏺  Iniciar Log de Sensores...");
         }
         else                    // Ajuda
         {
@@ -1055,6 +1140,11 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         AplicarTema();
         TrayCriar();
         SetTimer(h, TIMER_TRAY, 5000, nullptr);
+        // Abre no Resumo do Sistema (seleciona o primeiro item da arvore)
+        {
+            HTREEITEM raiz = TreeView_GetRoot(g_hTree);
+            if (raiz) TreeView_SelectItem(g_hTree, raiz);
+        }
         return 0;
     }
     case WM_SIZE:
@@ -1126,6 +1216,16 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         case IDM_EXPORT_FULL: ExportarRelatorioCompleto(); break;
         case IDM_SAIR:        DestroyWindow(h); break;
         case IDM_TEMA:        g_escuro = !g_escuro; AplicarTema(); break;
+        case IDM_INICIAR_WIN:
+        {
+            bool novo = !AppIniciaComWindows();
+            AppDefinirIniciarComWindows(novo);
+            MessageBoxW(h, novo ?
+                L"SystemInfoPro agora inicia junto com o Windows\n(minimizado na bandeja)." :
+                L"SystemInfoPro nao inicia mais automaticamente com o Windows.",
+                L"Iniciar com o Windows", MB_ICONINFORMATION);
+            break;
+        }
         case IDM_ATUALIZAR:   if (g_paginaAtual != PAGE_NONE) CarregarPagina(g_paginaAtual); break;
         case IDM_BENCH:
             CarregarPagina(PAGE_BENCH);
@@ -1137,6 +1237,23 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             CarregarPagina(PAGE_SNAP);
             SnapshotComparar(h);
             AjustarColunas();
+            break;
+        case IDM_DISK:
+            DiskAnalyzerEscanear(h);
+            CarregarPagina(PAGE_DISK);
+            break;
+        case IDM_NETDIAG:
+            CarregarPagina(PAGE_NETDIAG);
+            NetDiagIniciar(h);
+            CarregarPagina(PAGE_NETDIAG);
+            break;
+        case IDM_LOG_INICIAR:
+            SensorLogIniciar(h);
+            if (g_paginaAtual == PAGE_SENSORLOG) CarregarPagina(PAGE_SENSORLOG);
+            break;
+        case IDM_LOG_PARAR:
+            SensorLogParar();
+            if (g_paginaAtual == PAGE_SENSORLOG) CarregarPagina(PAGE_SENSORLOG);
             break;
         case IDM_TRAY_RESTAURAR:
             ShowWindow(h, SW_SHOW);
@@ -1170,6 +1287,8 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         else if (wp == TIMER_TRAY)
         {
             TrayTick();
+            SensorLogTick();
+            if (g_paginaAtual == PAGE_SENSORLOG) CarregarPagina(PAGE_SENSORLOG);
         }
         return 0;
 
@@ -1222,6 +1341,16 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
                   L"Os resultados estao na categoria 'Benchmark do Sistema'.", NIIF_INFO);
         return 0;
 
+    case WM_APP_NETDIAG_FIM:
+        if (g_paginaAtual == PAGE_NETDIAG) CarregarPagina(PAGE_NETDIAG);
+        return 0;
+
+    case WM_APP_DISK_FIM:
+        if (g_paginaAtual == PAGE_DISK) CarregarPagina(PAGE_DISK);
+        TrayBalao(L"✅ Analise de disco concluida",
+                  L"Os resultados estao na categoria 'Analisador de Disco'.", NIIF_INFO);
+        return 0;
+
     case WM_GETMINMAXINFO:
     {
         MINMAXINFO* mmi = (MINMAXINFO*)lp;
@@ -1232,6 +1361,10 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_DESTROY:
         KillTimer(h, TIMER_REALTIME);
         KillTimer(h, TIMER_TRAY);
+        SensorLogParar();
+        BenchmarkShutdown();     // espera threads de trabalho terminarem
+        NetDiagShutdown();
+        DiskAnalyzerShutdown();
         TrayRemover();
         RealtimeShutdown();
         if (g_hFont) DeleteObject(g_hFont);

@@ -30,6 +30,10 @@ extern HWND g_hList;
 
 // Adiciona uma linha "Propriedade | Valor"
 void AddRow(const std::wstring& prop, const std::wstring& val);
+// Adiciona uma linha com metadados de acao para o menu de contexto.
+// tipoAcao: 1=processo (meta=PID), 2=servico (meta=DisplayName), 3=startup (meta=nome)
+void AddActionRow(const std::wstring& prop, const std::wstring& val,
+                  int tipoAcao, const std::wstring& meta);
 // Adiciona um titulo de secao "--- TITULO ---"
 void AddSection(const std::wstring& title);
 // Linha em branco
@@ -117,12 +121,50 @@ void GraficosResetar();
 void LoadBenchmark();                     // pagina de resultados/instrucoes
 void BenchmarkIniciar(HWND janelaNotificar);
 bool BenchmarkEmExecucao();
+void BenchmarkShutdown();                 // join da thread ao fechar o app
 const wchar_t* BenchmarkNomeEtapa(int etapa);
 
 // ---------- Snapshot / comparacao ----------
 void LoadSnapshotInfo();                  // pagina com instrucoes
 void SnapshotCriar(HWND dono);            // salva inventario em arquivo
 void SnapshotComparar(HWND dono);         // abre arquivo e preenche a lista com o diff
+
+// ---------- Analisador de disco ----------
+#define WM_APP_DISK_FIM (WM_APP + 4)
+void LoadDiskAnalyzer();                  // pagina (ultimo resultado ou instrucoes)
+void DiskAnalyzerEscanear(HWND dono);     // escolhe pasta e escaneia (em thread)
+bool DiskAnalyzerEmExecucao();
+void DiskAnalyzerShutdown();
+
+// ---------- Diagnostico de rede ----------
+#define WM_APP_NETDIAG_FIM (WM_APP + 3)
+void LoadNetDiag();
+void NetDiagIniciar(HWND janelaNotificar);
+bool NetDiagEmExecucao();
+void NetDiagShutdown();
+
+// ---------- Log de sensores (CSV) ----------
+void LoadSensorLog();
+void SensorLogIniciar(HWND dono);         // escolhe arquivo e comeca a gravar
+void SensorLogParar();
+bool SensorLogAtivo();
+void SensorLogTick();                     // chamado pelo timer da bandeja
+
+// ---------- Gerenciamento ativo ----------
+bool GerenciarFinalizarProcesso(HWND dono, DWORD pid, const std::wstring& nome);
+bool GerenciarServico(HWND dono, const std::wstring& nomeExibicao, bool iniciar);
+bool GerenciarDesabilitarStartup(HWND dono, const std::wstring& nome);
+bool GerenciarReabilitarStartup(HWND dono, const std::wstring& nome);
+
+// ---------- Resumo do sistema (dashboard) ----------
+void LoadResumo();
+
+// ---------- Itens de inicializacao desabilitados ----------
+void LoadStartupDisabled();
+
+// ---------- Iniciar com o Windows (o proprio app) ----------
+bool AppIniciaComWindows();
+void AppDefinirIniciarComWindows(bool ativar);
 
 // ---------- NVML (compartilhado entre GPU / sensores / tempo real) ----------
 struct NvmlInfo

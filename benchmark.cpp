@@ -15,6 +15,7 @@ namespace
     std::atomic<long> g_rodando{ 0 };
     std::atomic<int>  g_etapaAtual{ 0 };
     HWND g_notificar = nullptr;
+    std::thread g_thread;   // mantida para join no encerramento
 
     double Agora()
     {
@@ -276,7 +277,15 @@ void BenchmarkIniciar(HWND janelaNotificar)
     long esperado = 0;
     if (!g_rodando.compare_exchange_strong(esperado, 1)) return;   // ja rodando
     g_notificar = janelaNotificar;
-    std::thread(RodarBenchmark).detach();
+    if (g_thread.joinable()) g_thread.join();   // limpa a anterior
+    g_thread = std::thread(RodarBenchmark);
+}
+
+// Chamado no encerramento do app: espera a thread terminar com seguranca.
+void BenchmarkShutdown()
+{
+    g_notificar = nullptr;   // evita PostMessage para janela ja destruida
+    if (g_thread.joinable()) g_thread.join();
 }
 
 void LoadBenchmark()
