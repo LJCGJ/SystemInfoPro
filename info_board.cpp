@@ -243,3 +243,4 @@ void LoadBattery()
             AddRow(L"Diagnostico de Saude", L"Nao disponivel para este equipamento.");
     }
 }
+//LJCGJ
