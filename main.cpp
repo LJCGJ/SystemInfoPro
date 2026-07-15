@@ -1,9 +1,13 @@
 // ============================================================
 //  SystemInfoPro - Painel de Informacoes do Sistema (C++ / Win32)
-//  main.cpp - Janela principal, arvore, lista, busca, temas,
-//             graficos e exportacao TXT/HTML
+//  main.cpp - Interface estilo VS Code:
+//    - Barra de menus escura no topo (Arquivo / Exibir / Ajuda)
+//    - Tema escuro por padrao (alternavel)
+//    - Icones nas categorias da arvore
+//    - Faixa de titulo da categoria + busca integrada
 // ============================================================
 #include "common.h"
+#include <windowsx.h>
 #include <commdlg.h>
 #include <objbase.h>
 #include <uxtheme.h>
@@ -15,7 +19,6 @@
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "dwmapi.lib")
 
-// Ativa o estilo visual moderno dos controles (Common Controls v6)
 #pragma comment(linker, "\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -24,42 +27,60 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 enum PageId
 {
     PAGE_NONE = 0,
-    // Sensores
     PAGE_GRAPHS, PAGE_REALTIME, PAGE_TEMPS,
-    // Hardware
     PAGE_CPU, PAGE_BOARD, PAGE_GPU, PAGE_MONITORS, PAGE_RAM,
     PAGE_STORAGE, PAGE_PCI, PAGE_DRIVERS, PAGE_USB, PAGE_AUDIO, PAGE_PRINTERS, PAGE_BATTERY,
-    // Software
     PAGE_OS, PAGE_PROGRAMS, PAGE_STARTUP, PAGE_PROCESSES, PAGE_USERS,
     PAGE_SERVICES, PAGE_HOTFIX, PAGE_ENV, PAGE_SECURITY, PAGE_TASKS, PAGE_DIRECTX,
-    // Rede
     PAGE_NETWORK, PAGE_TCP, PAGE_SHARES
 };
 
-// ---------------- IDs de controles ----------------
+// ---------------- IDs de comandos ----------------
 enum
 {
-    ID_TREE = 101, ID_LIST = 102, ID_BTN_TXT = 103, ID_STATUS = 104,
-    ID_BTN_HTML = 105, ID_BTN_TEMA = 106, ID_BUSCA = 107
+    ID_TREE = 101, ID_LIST = 102, ID_STATUS = 104, ID_BUSCA = 107, ID_TITULO = 108,
+    IDM_EXPORT_TXT = 201, IDM_EXPORT_HTML = 202, IDM_SAIR = 203,
+    IDM_TEMA = 210, IDM_ATUALIZAR = 211,
+    IDM_SOBRE = 220
 };
 
 // ---------------- Globais ----------------
 HWND g_hList = nullptr;
 static HWND g_hMain = nullptr, g_hTree = nullptr, g_hBusca = nullptr, g_hGraf = nullptr;
-static HWND g_hBtnTxt = nullptr, g_hBtnHtml = nullptr, g_hBtnTema = nullptr, g_hStatus = nullptr;
-static HFONT g_hFont = nullptr, g_hFontBusca = nullptr;
+static HWND g_hBarra = nullptr, g_hTitulo = nullptr, g_hStatus = nullptr;
+static HFONT g_hFont = nullptr, g_hFontBusca = nullptr, g_hFontTitulo = nullptr, g_hFontBarra = nullptr;
 static PageId g_paginaAtual = PAGE_NONE;
 static std::map<std::wstring, int> g_chavesTempoReal;
-static std::vector<std::pair<std::wstring, std::wstring>> g_dados;  // cache p/ busca
-static bool g_escuro = false;
+static std::vector<std::pair<std::wstring, std::wstring>> g_dados;
+static std::map<int, std::wstring> g_titulos;     // PageId -> rotulo (com icone)
+static bool g_escuro = true;                      // tema escuro por padrao
 static bool g_ignorarBusca = false;
-static HBRUSH g_brFundoEscuro = nullptr, g_brFundoClaro = nullptr;
+static HBRUSH g_brEdit = nullptr, g_brTitulo = nullptr;
 static const UINT TIMER_REALTIME = 1;
+static const int ALTURA_BARRA = 38;
+static const int ALTURA_TITULO = 40;
 
-// Cores do tema
-static COLORREF CorFundo()   { return g_escuro ? RGB(32, 32, 36)    : RGB(255, 255, 255); }
-static COLORREF CorTexto()   { return g_escuro ? RGB(230, 230, 230) : RGB(20, 20, 20); }
-static COLORREF CorJanela()  { return g_escuro ? RGB(23, 23, 26)    : RGB(240, 240, 240); }
+// ---------------- Cores do tema ----------------
+static COLORREF CorFundo()      { return g_escuro ? RGB(30, 30, 34)    : RGB(255, 255, 255); }
+static COLORREF CorTexto()      { return g_escuro ? RGB(225, 225, 228) : RGB(25, 25, 25); }
+static COLORREF CorJanela()     { return g_escuro ? RGB(24, 24, 27)    : RGB(243, 243, 243); }
+static COLORREF CorBarra()      { return g_escuro ? RGB(40, 40, 46)    : RGB(235, 235, 238); }
+static COLORREF CorBarraHot()   { return g_escuro ? RGB(62, 62, 70)    : RGB(215, 218, 222); }
+static COLORREF CorDestaque()   { return RGB(0, 122, 204); }   // azul VS Code
+static COLORREF CorTituloTxt()  { return g_escuro ? RGB(240, 240, 242) : RGB(20, 20, 20); }
+
+// ---------------- Menus escuros (API nao documentada do uxtheme) ----------------
+static void AtualizarModoMenus()
+{
+    typedef int (WINAPI* PFN_SetPreferredAppMode)(int);   // ordinal 135 (Win10 1809+)
+    typedef void (WINAPI* PFN_FlushMenuThemes)();          // ordinal 136
+    HMODULE ux = GetModuleHandleW(L"uxtheme.dll");
+    if (!ux) return;
+    auto setMode = (PFN_SetPreferredAppMode)GetProcAddress(ux, MAKEINTRESOURCEA(135));
+    auto flush = (PFN_FlushMenuThemes)GetProcAddress(ux, MAKEINTRESOURCEA(136));
+    if (setMode) setMode(g_escuro ? 2 /*ForceDark*/ : 3 /*ForceLight*/);
+    if (flush) flush();
+}
 
 // ================= Utilitarios do ListView =================
 static void ListInsert(const std::wstring& c0, const std::wstring& c1)
@@ -151,7 +172,6 @@ static void OrdenarPorColuna(int coluna)
         [coluna](const std::pair<std::wstring, std::wstring>& a,
                  const std::pair<std::wstring, std::wstring>& b)
     {
-        // linhas vazias sempre para o fim
         bool va = a.first.empty() && a.second.empty();
         bool vb = b.first.empty() && b.second.empty();
         if (va != vb) return vb;
@@ -184,10 +204,10 @@ static void MenuContextoLista()
     int sel = ListView_GetNextItem(g_hList, -1, LVNI_SELECTED);
 
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING | (sel < 0 ? MF_GRAYED : 0), 1, L"Copiar Linha");
-    AppendMenuW(menu, MF_STRING | (sel < 0 ? MF_GRAYED : 0), 2, L"Copiar Somente o Valor");
+    AppendMenuW(menu, MF_STRING | (sel < 0 ? MF_GRAYED : 0), 1, L"📄  Copiar Linha");
+    AppendMenuW(menu, MF_STRING | (sel < 0 ? MF_GRAYED : 0), 2, L"✂  Copiar Somente o Valor");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, 3, L"Copiar Tudo (categoria atual)");
+    AppendMenuW(menu, MF_STRING, 3, L"📋  Copiar Tudo (categoria atual)");
 
     POINT pt; GetCursorPos(&pt);
     int cmd = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, pt.x, pt.y, 0, g_hMain, nullptr);
@@ -260,21 +280,28 @@ static void AplicarTema()
     TreeView_SetBkColor(g_hTree, CorFundo());
     TreeView_SetTextColor(g_hTree, CorTexto());
 
-    // Barras de rolagem escuras (Windows 10 1809+; inofensivo em versoes antigas)
     SetWindowTheme(g_hList, g_escuro ? L"DarkMode_Explorer" : L"Explorer", nullptr);
     SetWindowTheme(g_hTree, g_escuro ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+    HWND hdr = ListView_GetHeader(g_hList);
+    if (hdr) SetWindowTheme(hdr, g_escuro ? L"DarkMode_ItemsView" : L"ItemsView", nullptr);
 
-    // Barra de titulo escura
     BOOL escuro = g_escuro ? TRUE : FALSE;
     if (FAILED(DwmSetWindowAttribute(g_hMain, 20, &escuro, sizeof(escuro))))
         DwmSetWindowAttribute(g_hMain, 19, &escuro, sizeof(escuro));
 
+    if (g_brEdit) DeleteObject(g_brEdit);
+    if (g_brTitulo) DeleteObject(g_brTitulo);
+    g_brEdit = CreateSolidBrush(g_escuro ? RGB(45, 45, 52) : RGB(255, 255, 255));
+    g_brTitulo = CreateSolidBrush(CorJanela());
+
     GraficosDefinirTema(g_escuro);
-    SetWindowTextW(g_hBtnTema, g_escuro ? L"Tema Claro" : L"Tema Escuro");
+    AtualizarModoMenus();
 
     InvalidateRect(g_hMain, nullptr, TRUE);
+    InvalidateRect(g_hBarra, nullptr, TRUE);
     InvalidateRect(g_hTree, nullptr, TRUE);
     InvalidateRect(g_hList, nullptr, TRUE);
+    InvalidateRect(g_hTitulo, nullptr, TRUE);
     InvalidateRect(g_hBusca, nullptr, TRUE);
     if (g_hGraf) InvalidateRect(g_hGraf, nullptr, TRUE);
 }
@@ -355,7 +382,7 @@ static void ExportarRelatorio(bool html)
             L"<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n"
             L"<title>Relatorio do Sistema - SystemInfoPro</title>\n<style>\n"
             L"body{font-family:'Segoe UI',sans-serif;background:#1b1b1f;color:#e4e4e4;margin:24px}\n"
-            L"h1{font-size:22px;border-bottom:2px solid #0078d7;padding-bottom:8px}\n"
+            L"h1{font-size:22px;border-bottom:2px solid #007acc;padding-bottom:8px}\n"
             L"h3{color:#4db2ff;margin:20px 0 6px 0}\n"
             L".meta{color:#9a9aa2;margin-bottom:16px}\n"
             L"table{border-collapse:collapse;width:100%;margin-bottom:10px}\n"
@@ -425,16 +452,20 @@ static void CarregarPagina(PageId p)
     KillTimer(g_hMain, TIMER_REALTIME);
     SetCursor(LoadCursor(nullptr, IDC_WAIT));
 
-    // Limpa a busca sem disparar refiltragem
     g_ignorarBusca = true;
     SetWindowTextW(g_hBusca, L"");
     g_ignorarBusca = false;
+    g_colOrdenada = -1;
 
     bool graficos = (p == PAGE_GRAPHS);
     bool tempoReal = (p == PAGE_REALTIME);
     ShowWindow(g_hGraf, graficos ? SW_SHOW : SW_HIDE);
     ShowWindow(g_hList, graficos ? SW_HIDE : SW_SHOW);
-    ShowWindow(g_hBusca, (graficos || tempoReal) ? SW_HIDE : SW_SHOW);
+    EnableWindow(g_hBusca, !(graficos || tempoReal));
+
+    // Titulo da categoria
+    auto itTit = g_titulos.find((int)p);
+    SetWindowTextW(g_hTitulo, itTit != g_titulos.end() ? itTit->second.c_str() : L"");
 
     SendMessageW(g_hList, WM_SETREDRAW, FALSE, 0);
     ClearList();
@@ -499,53 +530,211 @@ static HTREEITEM TreeAdd(HTREEITEM pai, const wchar_t* texto, PageId pagina, boo
         tvi.item.state = TVIS_BOLD;
         tvi.item.stateMask = TVIS_BOLD;
     }
+    if (pagina != PAGE_NONE) g_titulos[(int)pagina] = texto;
     return TreeView_InsertItem(g_hTree, &tvi);
 }
 
 static void MontarArvore()
 {
-    HTREEITEM sensores = TreeAdd(TVI_ROOT, L"Sensores em Tempo Real", PAGE_NONE, true);
-    TreeAdd(sensores, L"Graficos de Desempenho", PAGE_GRAPHS);
-    TreeAdd(sensores, L"Painel de Monitoramento (Detalhado)", PAGE_REALTIME);
-    TreeAdd(sensores, L"Sensores Termicos (Temperaturas)", PAGE_TEMPS);
+    HTREEITEM sensores = TreeAdd(TVI_ROOT, L"⚡ Sensores em Tempo Real", PAGE_NONE, true);
+    TreeAdd(sensores, L"📈 Graficos de Desempenho", PAGE_GRAPHS);
+    TreeAdd(sensores, L"📟 Painel de Monitoramento", PAGE_REALTIME);
+    TreeAdd(sensores, L"🌡 Sensores Termicos", PAGE_TEMPS);
 
-    HTREEITEM hw = TreeAdd(TVI_ROOT, L"Hardware", PAGE_NONE, true);
-    TreeAdd(hw, L"Processador (CPU)", PAGE_CPU);
-    TreeAdd(hw, L"Placa-Mae e BIOS", PAGE_BOARD);
-    TreeAdd(hw, L"Placa de Video (GPU)", PAGE_GPU);
-    TreeAdd(hw, L"Telas e Monitores", PAGE_MONITORS);
-    TreeAdd(hw, L"Memoria RAM", PAGE_RAM);
-    TreeAdd(hw, L"Armazenamento e SMART", PAGE_STORAGE);
-    TreeAdd(hw, L"Dispositivos PCI", PAGE_PCI);
-    TreeAdd(hw, L"Drivers de Sistema", PAGE_DRIVERS);
-    TreeAdd(hw, L"Dispositivos USB", PAGE_USB);
-    TreeAdd(hw, L"Dispositivos de Audio", PAGE_AUDIO);
-    TreeAdd(hw, L"Impressoras e Fax", PAGE_PRINTERS);
-    TreeAdd(hw, L"Bateria e Energia", PAGE_BATTERY);
+    HTREEITEM hw = TreeAdd(TVI_ROOT, L"🔧 Hardware", PAGE_NONE, true);
+    TreeAdd(hw, L"⚙ Processador (CPU)", PAGE_CPU);
+    TreeAdd(hw, L"🧩 Placa-Mae e BIOS", PAGE_BOARD);
+    TreeAdd(hw, L"🎮 Placa de Video (GPU)", PAGE_GPU);
+    TreeAdd(hw, L"🖥 Telas e Monitores", PAGE_MONITORS);
+    TreeAdd(hw, L"🧠 Memoria RAM", PAGE_RAM);
+    TreeAdd(hw, L"💾 Armazenamento e SMART", PAGE_STORAGE);
+    TreeAdd(hw, L"🎛 Dispositivos PCI", PAGE_PCI);
+    TreeAdd(hw, L"🛠 Drivers de Sistema", PAGE_DRIVERS);
+    TreeAdd(hw, L"🔌 Dispositivos USB", PAGE_USB);
+    TreeAdd(hw, L"🔊 Dispositivos de Audio", PAGE_AUDIO);
+    TreeAdd(hw, L"🖨 Impressoras e Fax", PAGE_PRINTERS);
+    TreeAdd(hw, L"🔋 Bateria e Energia", PAGE_BATTERY);
 
-    HTREEITEM sw = TreeAdd(TVI_ROOT, L"Software", PAGE_NONE, true);
-    TreeAdd(sw, L"Sistema Operacional", PAGE_OS);
-    TreeAdd(sw, L"Programas Instalados", PAGE_PROGRAMS);
-    TreeAdd(sw, L"Programas de Inicializacao", PAGE_STARTUP);
-    TreeAdd(sw, L"Processos em Execucao", PAGE_PROCESSES);
-    TreeAdd(sw, L"Contas de Usuario", PAGE_USERS);
-    TreeAdd(sw, L"Servicos do Sistema", PAGE_SERVICES);
-    TreeAdd(sw, L"Atualizacoes do Windows (KB)", PAGE_HOTFIX);
-    TreeAdd(sw, L"Variaveis de Ambiente", PAGE_ENV);
-    TreeAdd(sw, L"Seguranca (Antivirus / TPM)", PAGE_SECURITY);
-    TreeAdd(sw, L"Tarefas Agendadas", PAGE_TASKS);
-    TreeAdd(sw, L"DirectX e Codecs", PAGE_DIRECTX);
+    HTREEITEM sw = TreeAdd(TVI_ROOT, L"📦 Software", PAGE_NONE, true);
+    TreeAdd(sw, L"💻 Sistema Operacional", PAGE_OS);
+    TreeAdd(sw, L"📦 Programas Instalados", PAGE_PROGRAMS);
+    TreeAdd(sw, L"🚀 Programas de Inicializacao", PAGE_STARTUP);
+    TreeAdd(sw, L"📋 Processos em Execucao", PAGE_PROCESSES);
+    TreeAdd(sw, L"👤 Contas de Usuario", PAGE_USERS);
+    TreeAdd(sw, L"🧰 Servicos do Sistema", PAGE_SERVICES);
+    TreeAdd(sw, L"🩹 Atualizacoes do Windows (KB)", PAGE_HOTFIX);
+    TreeAdd(sw, L"📑 Variaveis de Ambiente", PAGE_ENV);
+    TreeAdd(sw, L"🛡 Seguranca (Antivirus / TPM)", PAGE_SECURITY);
+    TreeAdd(sw, L"⏰ Tarefas Agendadas", PAGE_TASKS);
+    TreeAdd(sw, L"🎬 DirectX e Codecs", PAGE_DIRECTX);
 
-    HTREEITEM rede = TreeAdd(TVI_ROOT, L"Rede", PAGE_NONE, true);
-    TreeAdd(rede, L"Adaptadores de Conexao", PAGE_NETWORK);
-    TreeAdd(rede, L"Conexoes TCP Ativas", PAGE_TCP);
-    TreeAdd(rede, L"Compartilhamentos de Rede", PAGE_SHARES);
+    HTREEITEM rede = TreeAdd(TVI_ROOT, L"🌐 Rede", PAGE_NONE, true);
+    TreeAdd(rede, L"📡 Adaptadores de Conexao", PAGE_NETWORK);
+    TreeAdd(rede, L"🔗 Conexoes TCP Ativas", PAGE_TCP);
+    TreeAdd(rede, L"📁 Compartilhamentos de Rede", PAGE_SHARES);
 
     HTREEITEM raiz = TreeView_GetRoot(g_hTree);
     while (raiz)
     {
         TreeView_Expand(g_hTree, raiz, TVE_EXPAND);
         raiz = TreeView_GetNextSibling(g_hTree, raiz);
+    }
+}
+
+// ============================================================
+//  Barra de menus superior (estilo VS Code)
+// ============================================================
+namespace
+{
+    struct ItemBarra { std::wstring rotulo; RECT rc; };
+    std::vector<ItemBarra> g_itensBarra = { { L"Arquivo", {} }, { L"Exibir", {} }, { L"Ajuda", {} } };
+    int g_hotBarra = -1;
+
+    void AbrirMenuBarra(int indice)
+    {
+        HMENU menu = CreatePopupMenu();
+        if (indice == 0)   // Arquivo
+        {
+            AppendMenuW(menu, MF_STRING, IDM_EXPORT_TXT, L"📄  Exportar como TXT...");
+            AppendMenuW(menu, MF_STRING, IDM_EXPORT_HTML, L"🌐  Exportar como HTML...");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_STRING, IDM_SAIR, L"❌  Sair");
+        }
+        else if (indice == 1)   // Exibir
+        {
+            AppendMenuW(menu, MF_STRING, IDM_TEMA,
+                g_escuro ? L"☀  Mudar para Tema Claro" : L"🌙  Mudar para Tema Escuro");
+            AppendMenuW(menu, MF_STRING, IDM_ATUALIZAR, L"🔄  Atualizar Categoria\tF5");
+        }
+        else                    // Ajuda
+        {
+            AppendMenuW(menu, MF_STRING, IDM_SOBRE, L"ℹ  Sobre o SystemInfoPro");
+        }
+
+        RECT rc = g_itensBarra[indice].rc;
+        POINT pt{ rc.left, rc.bottom };
+        ClientToScreen(g_hBarra, &pt);
+        int cmd = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD,
+                                 pt.x, pt.y, 0, g_hBarra, nullptr);
+        DestroyMenu(menu);
+        if (cmd) PostMessageW(g_hMain, WM_COMMAND, cmd, 0);
+    }
+
+    LRESULT CALLBACK BarraProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
+    {
+        switch (msg)
+        {
+        case WM_ERASEBKGND:
+            return 1;
+
+        case WM_PAINT:
+        {
+            PAINTSTRUCT ps;
+            HDC dcTela = BeginPaint(h, &ps);
+            RECT rc; GetClientRect(h, &rc);
+            int W = rc.right, H = rc.bottom;
+
+            HDC dc = CreateCompatibleDC(dcTela);
+            HBITMAP bmp = CreateCompatibleBitmap(dcTela, W, H);
+            HGDIOBJ oldBmp = SelectObject(dc, bmp);
+
+            HBRUSH br = CreateSolidBrush(CorBarra());
+            FillRect(dc, &rc, br);
+            DeleteObject(br);
+
+            // Linha azul de destaque na base (marca visual do app)
+            RECT rlinha{ 0, H - 2, W, H };
+            HBRUSH brAzul = CreateSolidBrush(CorDestaque());
+            FillRect(dc, &rlinha, brAzul);
+            DeleteObject(brAzul);
+
+            SetBkMode(dc, TRANSPARENT);
+
+            // Logo / nome do app
+            SelectObject(dc, g_hFontTitulo);
+            SetTextColor(dc, CorDestaque());
+            const wchar_t* logo = L"💻 SystemInfoPro";
+            TextOutW(dc, 12, (H - 22) / 2 - 2, logo, (int)wcslen(logo));
+
+            SIZE szLogo{};
+            GetTextExtentPoint32W(dc, logo, (int)wcslen(logo), &szLogo);
+
+            // Itens de menu
+            SelectObject(dc, g_hFontBarra);
+            int x = 12 + szLogo.cx + 28;
+            for (size_t i = 0; i < g_itensBarra.size(); i++)
+            {
+                SIZE sz{};
+                GetTextExtentPoint32W(dc, g_itensBarra[i].rotulo.c_str(),
+                                      (int)g_itensBarra[i].rotulo.size(), &sz);
+                RECT r{ x - 10, 4, x + sz.cx + 10, H - 6 };
+                g_itensBarra[i].rc = r;
+
+                if ((int)i == g_hotBarra)
+                {
+                    HBRUSH hot = CreateSolidBrush(CorBarraHot());
+                    FillRect(dc, &r, hot);
+                    DeleteObject(hot);
+                }
+                SetTextColor(dc, CorTexto());
+                TextOutW(dc, x, (H - sz.cy) / 2 - 1,
+                         g_itensBarra[i].rotulo.c_str(), (int)g_itensBarra[i].rotulo.size());
+                x += sz.cx + 30;
+            }
+
+            BitBlt(dcTela, 0, 0, W, H, dc, 0, 0, SRCCOPY);
+            SelectObject(dc, oldBmp);
+            DeleteObject(bmp);
+            DeleteDC(dc);
+            EndPaint(h, &ps);
+            return 0;
+        }
+
+        case WM_MOUSEMOVE:
+        {
+            POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            int novo = -1;
+            for (size_t i = 0; i < g_itensBarra.size(); i++)
+                if (PtInRect(&g_itensBarra[i].rc, pt)) { novo = (int)i; break; }
+            if (novo != g_hotBarra)
+            {
+                g_hotBarra = novo;
+                InvalidateRect(h, nullptr, FALSE);
+                TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, h, 0 };
+                TrackMouseEvent(&tme);
+            }
+            return 0;
+        }
+        case WM_MOUSELEAVE:
+            if (g_hotBarra != -1) { g_hotBarra = -1; InvalidateRect(h, nullptr, FALSE); }
+            return 0;
+
+        case WM_LBUTTONDOWN:
+        {
+            POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            for (size_t i = 0; i < g_itensBarra.size(); i++)
+                if (PtInRect(&g_itensBarra[i].rc, pt)) { AbrirMenuBarra((int)i); return 0; }
+            return 0;
+        }
+        }
+        return DefWindowProcW(h, msg, wp, lp);
+    }
+
+    HWND CriarBarra(HWND pai)
+    {
+        static bool reg = false;
+        if (!reg)
+        {
+            WNDCLASSW wc{};
+            wc.lpfnWndProc = BarraProc;
+            wc.hInstance = GetModuleHandleW(nullptr);
+            wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+            wc.lpszClassName = L"SIP_Barra";
+            RegisterClassW(&wc);
+            reg = true;
+        }
+        return CreateWindowExW(0, L"SIP_Barra", L"", WS_CHILD | WS_VISIBLE,
+                               0, 0, 100, ALTURA_BARRA, pai, nullptr, GetModuleHandleW(nullptr), nullptr);
     }
 }
 
@@ -557,24 +746,24 @@ static void Redimensionar()
     RECT rcSt; GetWindowRect(g_hStatus, &rcSt);
     int hStatus = rcSt.bottom - rcSt.top;
 
-    int larguraArvore = max(280, (rc.right - rc.left) / 4);
-    int hBtn = 34;
-    int hUtil = rc.bottom - hStatus;
-    int hBusca = 28;
+    int W = rc.right, H = rc.bottom;
+    int larguraArvore = max(290, W / 4);
+    int hUtil = H - hStatus;
 
-    MoveWindow(g_hTree, 0, 0, larguraArvore, hUtil - 3 * hBtn, TRUE);
-    MoveWindow(g_hBtnTxt,  0, hUtil - 3 * hBtn, larguraArvore, hBtn, TRUE);
-    MoveWindow(g_hBtnHtml, 0, hUtil - 2 * hBtn, larguraArvore, hBtn, TRUE);
-    MoveWindow(g_hBtnTema, 0, hUtil - 1 * hBtn, larguraArvore, hBtn, TRUE);
+    MoveWindow(g_hBarra, 0, 0, W, ALTURA_BARRA, TRUE);
+    MoveWindow(g_hTree, 0, ALTURA_BARRA, larguraArvore, hUtil - ALTURA_BARRA, TRUE);
 
     int xDir = larguraArvore + 3;
-    int wDir = rc.right - xDir;
+    int wDir = W - xDir;
 
-    bool buscaVisivel = IsWindowVisible(g_hBusca);
-    int topoLista = buscaVisivel ? hBusca + 2 : 0;
-    MoveWindow(g_hBusca, xDir, 0, wDir, hBusca, TRUE);
-    MoveWindow(g_hList, xDir, topoLista, wDir, hUtil - topoLista, TRUE);
-    MoveWindow(g_hGraf, xDir, 0, wDir, hUtil, TRUE);
+    // Faixa de titulo: texto a esquerda, busca a direita
+    int wBusca = min(340, wDir / 2);
+    MoveWindow(g_hTitulo, xDir + 12, ALTURA_BARRA + 8, wDir - wBusca - 30, ALTURA_TITULO - 14, TRUE);
+    MoveWindow(g_hBusca, xDir + wDir - wBusca - 8, ALTURA_BARRA + 7, wBusca, 26, TRUE);
+
+    int topoConteudo = ALTURA_BARRA + ALTURA_TITULO;
+    MoveWindow(g_hList, xDir, topoConteudo, wDir, hUtil - topoConteudo, TRUE);
+    MoveWindow(g_hGraf, xDir, topoConteudo, wDir, hUtil - topoConteudo, TRUE);
     AjustarColunas();
 }
 
@@ -589,25 +778,34 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 
         g_hFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
             0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-        g_hFontBusca = CreateFontW(-16, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+        g_hFontBusca = CreateFontW(-15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
             0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-        g_brFundoEscuro = CreateSolidBrush(RGB(32, 32, 36));
-        g_brFundoClaro = CreateSolidBrush(RGB(255, 255, 255));
+        g_hFontTitulo = CreateFontW(-18, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0, DEFAULT_CHARSET,
+            0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        g_hFontBarra = CreateFontW(-15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET,
+            0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
 
-        g_hTree = CreateWindowExW(WS_EX_CLIENTEDGE, WC_TREEVIEWW, L"",
-            WS_CHILD | WS_VISIBLE | TVS_HASLINES | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
+        g_hBarra = CriarBarra(h);
+
+        g_hTree = CreateWindowExW(0, WC_TREEVIEWW, L"",
+            WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_TRACKSELECT,
             0, 0, 100, 100, h, (HMENU)(INT_PTR)ID_TREE, nullptr, nullptr);
+        TreeView_SetItemHeight(g_hTree, 26);
+        TreeView_SetIndent(g_hTree, 14);
+
+        g_hTitulo = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE,
+            0, 0, 100, 28, h, (HMENU)(INT_PTR)ID_TITULO, nullptr, nullptr);
 
         g_hBusca = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
             WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
             0, 0, 100, 26, h, (HMENU)(INT_PTR)ID_BUSCA, nullptr, nullptr);
-        SendMessageW(g_hBusca, EM_SETCUEBANNER, TRUE, (LPARAM)L"Pesquisar nesta categoria...");
+        SendMessageW(g_hBusca, EM_SETCUEBANNER, TRUE, (LPARAM)L"🔎 Pesquisar nesta categoria...");
 
-        g_hList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
+        g_hList = CreateWindowExW(0, WC_LISTVIEWW, L"",
             WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SHOWSELALWAYS,
             0, 0, 100, 100, h, (HMENU)(INT_PTR)ID_LIST, nullptr, nullptr);
         ListView_SetExtendedListViewStyle(g_hList,
-            LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+            LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
         LVCOLUMNW col{};
         col.mask = LVCF_TEXT | LVCF_WIDTH;
@@ -618,23 +816,16 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 
         g_hGraf = CriarJanelaGraficos(h);
 
-        g_hBtnTxt = CreateWindowW(L"BUTTON", L"Exportar TXT",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 34, h, (HMENU)(INT_PTR)ID_BTN_TXT, nullptr, nullptr);
-        g_hBtnHtml = CreateWindowW(L"BUTTON", L"Exportar HTML",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 34, h, (HMENU)(INT_PTR)ID_BTN_HTML, nullptr, nullptr);
-        g_hBtnTema = CreateWindowW(L"BUTTON", L"Tema Escuro",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 100, 34, h, (HMENU)(INT_PTR)ID_BTN_TEMA, nullptr, nullptr);
-
         g_hStatus = CreateWindowW(STATUSCLASSNAMEW, L"",
             WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0, h, (HMENU)(INT_PTR)ID_STATUS, nullptr, nullptr);
         int partes[2] = { 320, -1 };
         SendMessageW(g_hStatus, SB_SETPARTS, 2, (LPARAM)partes);
         SendMessageW(g_hStatus, SB_SETTEXTW, 0, (LPARAM)L"  SystemInfoPro - pronto");
 
-        // Fonte moderna em todos os controles
-        HWND ctls[] = { g_hTree, g_hList, g_hBtnTxt, g_hBtnHtml, g_hBtnTema, g_hStatus };
+        HWND ctls[] = { g_hTree, g_hList, g_hStatus };
         for (HWND c : ctls) SendMessageW(c, WM_SETFONT, (WPARAM)g_hFont, TRUE);
         SendMessageW(g_hBusca, WM_SETFONT, (WPARAM)g_hFontBusca, TRUE);
+        SendMessageW(g_hTitulo, WM_SETFONT, (WPARAM)g_hFontTitulo, TRUE);
 
         MontarArvore();
         AplicarTema();
@@ -659,8 +850,25 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         {
             HDC dc = (HDC)wp;
             SetTextColor(dc, CorTexto());
-            SetBkColor(dc, CorFundo());
-            return (LRESULT)(g_escuro ? g_brFundoEscuro : g_brFundoClaro);
+            SetBkColor(dc, g_escuro ? RGB(45, 45, 52) : RGB(255, 255, 255));
+            return (LRESULT)g_brEdit;
+        }
+        break;
+
+    case WM_CTLCOLORSTATIC:
+        if ((HWND)lp == g_hTitulo)
+        {
+            HDC dc = (HDC)wp;
+            SetTextColor(dc, CorTituloTxt());
+            SetBkColor(dc, CorJanela());
+            return (LRESULT)g_brTitulo;
+        }
+        if ((HWND)lp == g_hBusca)   // edit desabilitado tambem passa por aqui
+        {
+            HDC dc = (HDC)wp;
+            SetTextColor(dc, CorTexto());
+            SetBkColor(dc, g_escuro ? RGB(45, 45, 52) : RGB(255, 255, 255));
+            return (LRESULT)g_brEdit;
         }
         break;
 
@@ -671,7 +879,7 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         {
             LPNMTREEVIEWW tv = (LPNMTREEVIEWW)lp;
             PageId p = (PageId)tv->itemNew.lParam;
-            if (p != PAGE_NONE) { g_colOrdenada = -1; CarregarPagina(p); Redimensionar(); }
+            if (p != PAGE_NONE) { CarregarPagina(p); Redimensionar(); }
         }
         else if (nm->hwndFrom == g_hList && nm->code == LVN_COLUMNCLICK)
         {
@@ -685,11 +893,28 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         break;
     }
     case WM_COMMAND:
-        if (LOWORD(wp) == ID_BTN_TXT)  ExportarRelatorio(false);
-        else if (LOWORD(wp) == ID_BTN_HTML) ExportarRelatorio(true);
-        else if (LOWORD(wp) == ID_BTN_TEMA) { g_escuro = !g_escuro; AplicarTema(); }
-        else if (LOWORD(wp) == ID_BUSCA && HIWORD(wp) == EN_CHANGE && !g_ignorarBusca)
-            RefiltrarLista();
+        switch (LOWORD(wp))
+        {
+        case IDM_EXPORT_TXT:  ExportarRelatorio(false); break;
+        case IDM_EXPORT_HTML: ExportarRelatorio(true); break;
+        case IDM_SAIR:        DestroyWindow(h); break;
+        case IDM_TEMA:        g_escuro = !g_escuro; AplicarTema(); break;
+        case IDM_ATUALIZAR:   if (g_paginaAtual != PAGE_NONE) CarregarPagina(g_paginaAtual); break;
+        case IDM_SOBRE:
+            MessageBoxW(h,
+                L"SystemInfoPro 2.0\n\n"
+                L"Painel completo de informacoes do sistema em C++ nativo (Win32).\n\n"
+                L"Recursos: sensores em tempo real, graficos de desempenho,\n"
+                L"SMART/NVMe, largura de banda de GPU e RAM, rede ao vivo,\n"
+                L"seguranca, tarefas agendadas e muito mais.\n\n"
+                L"Dica: abra o LibreHardwareMonitor junto para ver\n"
+                L"temperaturas por nucleo da CPU, tensoes e coolers.",
+                L"Sobre o SystemInfoPro", MB_ICONINFORMATION);
+            break;
+        case ID_BUSCA:
+            if (HIWORD(wp) == EN_CHANGE && !g_ignorarBusca) RefiltrarLista();
+            break;
+        }
         return 0;
 
     case WM_TIMER:
@@ -703,7 +928,7 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     case WM_GETMINMAXINFO:
     {
         MINMAXINFO* mmi = (MINMAXINFO*)lp;
-        mmi->ptMinTrackSize.x = 900;
+        mmi->ptMinTrackSize.x = 920;
         mmi->ptMinTrackSize.y = 560;
         return 0;
     }
@@ -712,8 +937,10 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         RealtimeShutdown();
         if (g_hFont) DeleteObject(g_hFont);
         if (g_hFontBusca) DeleteObject(g_hFontBusca);
-        if (g_brFundoEscuro) DeleteObject(g_brFundoEscuro);
-        if (g_brFundoClaro) DeleteObject(g_brFundoClaro);
+        if (g_hFontTitulo) DeleteObject(g_hFontTitulo);
+        if (g_hFontBarra) DeleteObject(g_hFontBarra);
+        if (g_brEdit) DeleteObject(g_brEdit);
+        if (g_brTitulo) DeleteObject(g_brTitulo);
         PostQuitMessage(0);
         return 0;
     }
@@ -738,25 +965,33 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int nCmd)
     wc.lpfnWndProc = JanelaProc;
     wc.hInstance = hInst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = nullptr;   // pintado no WM_ERASEBKGND (suporta tema)
+    wc.hbrBackground = nullptr;
     wc.lpszClassName = L"SystemInfoProJanela";
     wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     RegisterClassExW(&wc);
 
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName,
         L"SystemInfoPro - Painel de Informacoes do Sistema",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1250, 740,
+        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1280, 760,
         nullptr, nullptr, hInst, nullptr);
 
     ShowWindow(hwnd, SW_SHOWMAXIMIZED);
     UpdateWindow(hwnd);
 
+    // Atalho F5 = atualizar categoria atual
+    ACCEL acc[] = { { FVIRTKEY, VK_F5, IDM_ATUALIZAR } };
+    HACCEL hAccel = CreateAcceleratorTableW(acc, 1);
+
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0)
     {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
+        if (!TranslateAcceleratorW(hwnd, hAccel, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
     }
+    DestroyAcceleratorTable(hAccel);
     CoUninitialize();
     return (int)msg.wParam;
 }
