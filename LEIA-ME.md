@@ -61,6 +61,10 @@ Botão **Exportar Relatório (.txt)** salva a tela atual em UTF-8.
 | `graphs.cpp` | Gráficos de desempenho em tempo real (GDI) |
 | `info_extra.cpp` | PCI, hotfixes, variáveis de ambiente, compartilhamentos |
 | `info_extra2.cpp` | Drivers, segurança (AV/TPM/Secure Boot), tarefas agendadas, DirectX/codecs |
+| `benchmark.cpp` | Benchmark de CPU, RAM e disco (roda em thread separada) |
+| `snapshot.cpp` | Snapshot do sistema e comparação (o que mudou) |
+| `app.rc` | Informações de versão do executável |
+| `LICENSE` / `README-GITHUB.md` | Kit para publicar no GitHub (MIT, bilíngue) |
 
 ## Recursos da interface
 

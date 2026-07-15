@@ -111,6 +111,19 @@ void GraficosTick(HWND hGraficos);        // amostra + redesenha
 void GraficosDefinirTema(bool escuro);
 void GraficosResetar();
 
+// ---------- Benchmark ----------
+#define WM_APP_BENCH_ETAPA (WM_APP + 1)   // wParam = indice da etapa (1..6)
+#define WM_APP_BENCH_FIM   (WM_APP + 2)
+void LoadBenchmark();                     // pagina de resultados/instrucoes
+void BenchmarkIniciar(HWND janelaNotificar);
+bool BenchmarkEmExecucao();
+const wchar_t* BenchmarkNomeEtapa(int etapa);
+
+// ---------- Snapshot / comparacao ----------
+void LoadSnapshotInfo();                  // pagina com instrucoes
+void SnapshotCriar(HWND dono);            // salva inventario em arquivo
+void SnapshotComparar(HWND dono);         // abre arquivo e preenche a lista com o diff
+
 // ---------- NVML (compartilhado entre GPU / sensores / tempo real) ----------
 struct NvmlInfo
 {

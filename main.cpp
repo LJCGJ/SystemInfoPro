@@ -12,12 +12,14 @@
 #include <objbase.h>
 #include <uxtheme.h>
 #include <dwmapi.h>
+#include <shellapi.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "shell32.lib")
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
@@ -32,17 +34,22 @@ enum PageId
     PAGE_STORAGE, PAGE_PCI, PAGE_DRIVERS, PAGE_USB, PAGE_AUDIO, PAGE_PRINTERS, PAGE_BATTERY,
     PAGE_OS, PAGE_PROGRAMS, PAGE_STARTUP, PAGE_PROCESSES, PAGE_USERS,
     PAGE_SERVICES, PAGE_HOTFIX, PAGE_ENV, PAGE_SECURITY, PAGE_TASKS, PAGE_DIRECTX,
-    PAGE_NETWORK, PAGE_TCP, PAGE_SHARES
+    PAGE_NETWORK, PAGE_TCP, PAGE_SHARES,
+    PAGE_BENCH, PAGE_SNAP
 };
 
 // ---------------- IDs de comandos ----------------
 enum
 {
     ID_TREE = 101, ID_LIST = 102, ID_STATUS = 104, ID_BUSCA = 107, ID_TITULO = 108,
-    IDM_EXPORT_TXT = 201, IDM_EXPORT_HTML = 202, IDM_SAIR = 203,
+    IDM_EXPORT_TXT = 201, IDM_EXPORT_HTML = 202, IDM_SAIR = 203, IDM_EXPORT_FULL = 204,
     IDM_TEMA = 210, IDM_ATUALIZAR = 211,
-    IDM_SOBRE = 220
+    IDM_SOBRE = 220,
+    IDM_BENCH = 230, IDM_SNAP_CRIAR = 231, IDM_SNAP_COMP = 232,
+    IDM_TRAY_RESTAURAR = 240, IDM_TRAY_SAIR = 241
 };
+
+#define WM_TRAYICON (WM_APP + 10)
 
 // ---------------- Globais ----------------
 HWND g_hList = nullptr;
@@ -57,6 +64,12 @@ static bool g_escuro = true;                      // tema escuro por padrao
 static bool g_ignorarBusca = false;
 static HBRUSH g_brEdit = nullptr, g_brTitulo = nullptr;
 static const UINT TIMER_REALTIME = 1;
+static const UINT TIMER_TRAY = 2;
+
+// Bandeja / alertas
+static NOTIFYICONDATAW g_nid{};
+static bool g_trayCriado = false, g_avisoTrayMostrado = false;
+static ULONGLONG g_alertaRam = 0, g_alertaTemp = 0, g_alertaDisco = 0;
 static const int ALTURA_BARRA = 38;
 static const int ALTURA_TITULO = 40;
 
@@ -447,34 +460,11 @@ static void AjustarColunas()
 }
 
 // ================= Carregamento de paginas =================
-static void CarregarPagina(PageId p)
+// Chama o modulo de cada pagina (exceto as de tempo real)
+static void ChamarLoader(PageId p)
 {
-    KillTimer(g_hMain, TIMER_REALTIME);
-    SetCursor(LoadCursor(nullptr, IDC_WAIT));
-
-    g_ignorarBusca = true;
-    SetWindowTextW(g_hBusca, L"");
-    g_ignorarBusca = false;
-    g_colOrdenada = -1;
-
-    bool graficos = (p == PAGE_GRAPHS);
-    bool tempoReal = (p == PAGE_REALTIME);
-    ShowWindow(g_hGraf, graficos ? SW_SHOW : SW_HIDE);
-    ShowWindow(g_hList, graficos ? SW_HIDE : SW_SHOW);
-    EnableWindow(g_hBusca, !(graficos || tempoReal));
-
-    // Titulo da categoria
-    auto itTit = g_titulos.find((int)p);
-    SetWindowTextW(g_hTitulo, itTit != g_titulos.end() ? itTit->second.c_str() : L"");
-
-    SendMessageW(g_hList, WM_SETREDRAW, FALSE, 0);
-    ClearList();
-    g_paginaAtual = p;
-
     switch (p)
     {
-    case PAGE_GRAPHS:   RealtimeReset(); GraficosTick(g_hGraf); SetTimer(g_hMain, TIMER_REALTIME, 1000, nullptr); break;
-    case PAGE_REALTIME: RealtimeReset(); LoadRealtime(); SetTimer(g_hMain, TIMER_REALTIME, 1000, nullptr); break;
     case PAGE_TEMPS:    LoadTemperatures(); break;
     case PAGE_CPU:      LoadCPU(); break;
     case PAGE_BOARD:    LoadBoard(); break;
@@ -502,7 +492,49 @@ static void CarregarPagina(PageId p)
     case PAGE_NETWORK:  LoadNetwork(); break;
     case PAGE_TCP:      LoadTcpConnections(); break;
     case PAGE_SHARES:   LoadShares(); break;
+    case PAGE_BENCH:    LoadBenchmark(); break;
+    case PAGE_SNAP:     LoadSnapshotInfo(); break;
     default: break;
+    }
+}
+
+static void CarregarPagina(PageId p)
+{
+    KillTimer(g_hMain, TIMER_REALTIME);
+    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+
+    g_ignorarBusca = true;
+    SetWindowTextW(g_hBusca, L"");
+    g_ignorarBusca = false;
+    g_colOrdenada = -1;
+
+    bool graficos = (p == PAGE_GRAPHS);
+    bool tempoReal = (p == PAGE_REALTIME);
+    ShowWindow(g_hGraf, graficos ? SW_SHOW : SW_HIDE);
+    ShowWindow(g_hList, graficos ? SW_HIDE : SW_SHOW);
+    EnableWindow(g_hBusca, !(graficos || tempoReal));
+
+    // Titulo da categoria
+    auto itTit = g_titulos.find((int)p);
+    SetWindowTextW(g_hTitulo, itTit != g_titulos.end() ? itTit->second.c_str() : L"");
+
+    SendMessageW(g_hList, WM_SETREDRAW, FALSE, 0);
+    ClearList();
+    g_paginaAtual = p;
+
+    if (p == PAGE_GRAPHS)
+    {
+        RealtimeReset(); GraficosTick(g_hGraf);
+        SetTimer(g_hMain, TIMER_REALTIME, 1000, nullptr);
+    }
+    else if (p == PAGE_REALTIME)
+    {
+        RealtimeReset(); LoadRealtime();
+        SetTimer(g_hMain, TIMER_REALTIME, 1000, nullptr);
+    }
+    else
+    {
+        ChamarLoader(p);
     }
 
     SendMessageW(g_hList, WM_SETREDRAW, TRUE, 0);
@@ -513,6 +545,185 @@ static void CarregarPagina(PageId p)
     wchar_t txt[128];
     swprintf_s(txt, L"  %d itens carregados", ListView_GetItemCount(g_hList));
     SendMessageW(g_hStatus, SB_SETTEXTW, 1, (LPARAM)txt);
+}
+
+// ================= Relatorio completo (todas as categorias) =================
+static void ExportarRelatorioCompleto()
+{
+    wchar_t caminho[MAX_PATH];
+    wcscpy_s(caminho, L"Relatorio_Completo_Sistema.html");
+    if (!PedirCaminho(caminho, L"Pagina HTML (*.html)\0*.html\0", L"html")) return;
+
+    HANDLE h = CreateFileW(caminho, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        MessageBoxW(g_hMain, L"Nao foi possivel criar o arquivo.", L"Erro", MB_ICONERROR);
+        return;
+    }
+
+    const PageId paginas[] = {
+        PAGE_OS, PAGE_CPU, PAGE_BOARD, PAGE_GPU, PAGE_MONITORS, PAGE_RAM,
+        PAGE_STORAGE, PAGE_PCI, PAGE_DRIVERS, PAGE_USB, PAGE_AUDIO, PAGE_PRINTERS,
+        PAGE_BATTERY, PAGE_TEMPS, PAGE_PROGRAMS, PAGE_STARTUP, PAGE_PROCESSES,
+        PAGE_USERS, PAGE_SERVICES, PAGE_HOTFIX, PAGE_ENV, PAGE_SECURITY,
+        PAGE_TASKS, PAGE_DIRECTX, PAGE_NETWORK, PAGE_TCP, PAGE_SHARES
+    };
+
+    PageId paginaAnterior = g_paginaAtual;
+    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+    KillTimer(g_hMain, TIMER_REALTIME);
+
+    unsigned char bom[3] = { 0xEF, 0xBB, 0xBF };
+    DWORD esc = 0;
+    WriteFile(h, bom, 3, &esc, nullptr);
+
+    SYSTEMTIME st; GetLocalTime(&st);
+    wchar_t data[64];
+    swprintf_s(data, L"%02d/%02d/%04d %02d:%02d:%02d", st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute, st.wSecond);
+
+    EscreverUtf8(h,
+        L"<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n"
+        L"<title>Relatorio Completo do Sistema - SystemInfoPro</title>\n<style>\n"
+        L"body{font-family:'Segoe UI',sans-serif;background:#1b1b1f;color:#e4e4e4;margin:24px;max-width:1100px}\n"
+        L"h1{font-size:24px;border-bottom:3px solid #007acc;padding-bottom:10px}\n"
+        L"h2{font-size:19px;color:#ffffff;background:#007acc;padding:8px 14px;border-radius:6px;margin-top:34px}\n"
+        L"h3{color:#4db2ff;margin:18px 0 6px 0}\n"
+        L".meta{color:#9a9aa2;margin-bottom:20px}\n"
+        L"table{border-collapse:collapse;width:100%;margin-bottom:10px}\n"
+        L"td{border:1px solid #3a3a42;padding:6px 10px;font-size:14px;vertical-align:top}\n"
+        L"td:first-child{width:38%;color:#bcd6ff}\n"
+        L"tr:nth-child(even){background:#232329}\n"
+        L"</style>\n</head>\n<body>\n<h1>💻 Relatorio Completo do Sistema - SystemInfoPro</h1>\n"
+        L"<div class=\"meta\">Gerado em " + std::wstring(data) + L"</div>\n");
+
+    for (PageId p : paginas)
+    {
+        std::wstring titulo = g_titulos.count((int)p) ? g_titulos[(int)p] : L"Categoria";
+        std::wstring statusTxt = L"  Coletando: " + titulo + L"...";
+        SendMessageW(g_hStatus, SB_SETTEXTW, 0, (LPARAM)statusTxt.c_str());
+        UpdateWindow(g_hStatus);
+
+        ClearList();
+        ChamarLoader(p);
+
+        EscreverUtf8(h, L"<h2>" + EscapeHtml(titulo) + L"</h2>\n<table>\n");
+        for (const auto& linha : g_dados)
+        {
+            const std::wstring& prop = linha.first;
+            const std::wstring& val = linha.second;
+            if (prop.empty() && val.empty()) continue;
+            if (prop.size() > 6 && prop.substr(0, 4) == L"--- ")
+            {
+                std::wstring t = prop.substr(4);
+                size_t fim = t.rfind(L" ---");
+                if (fim != std::wstring::npos) t = t.substr(0, fim);
+                EscreverUtf8(h, L"</table>\n<h3>" + EscapeHtml(t) + L"</h3>\n<table>\n");
+            }
+            else
+            {
+                EscreverUtf8(h, L"<tr><td>" + EscapeHtml(prop) + L"</td><td>" +
+                                EscapeHtml(val) + L"</td></tr>\n");
+            }
+        }
+        EscreverUtf8(h, L"</table>\n");
+    }
+
+    EscreverUtf8(h, L"</body>\n</html>\n");
+    CloseHandle(h);
+
+    SendMessageW(g_hStatus, SB_SETTEXTW, 0, (LPARAM)L"  SystemInfoPro - pronto");
+    CarregarPagina(paginaAnterior != PAGE_NONE ? paginaAnterior : PAGE_OS);
+    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+    MessageBoxW(g_hMain, L"Relatorio completo salvo com sucesso!\n\nAbra o arquivo HTML em qualquer navegador.",
+                L"Sucesso", MB_ICONINFORMATION);
+}
+
+// ================= Bandeja e alertas =================
+static void TrayCriar()
+{
+    g_nid.cbSize = sizeof(g_nid);
+    g_nid.hWnd = g_hMain;
+    g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+    wcscpy_s(g_nid.szTip, L"SystemInfoPro");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+    g_trayCriado = true;
+}
+
+static void TrayRemover()
+{
+    if (g_trayCriado) Shell_NotifyIconW(NIM_DELETE, &g_nid);
+    g_trayCriado = false;
+}
+
+static void TrayTooltip(const std::wstring& texto)
+{
+    if (!g_trayCriado) return;
+    wcsncpy_s(g_nid.szTip, texto.c_str(), _TRUNCATE);
+    g_nid.uFlags = NIF_TIP;
+    Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+}
+
+static void TrayBalao(const wchar_t* titulo, const std::wstring& msg, DWORD icone = NIIF_WARNING)
+{
+    if (!g_trayCriado) return;
+    g_nid.uFlags = NIF_INFO;
+    wcscpy_s(g_nid.szInfoTitle, titulo);
+    wcsncpy_s(g_nid.szInfo, msg.c_str(), _TRUNCATE);
+    g_nid.dwInfoFlags = icone;
+    Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+}
+
+static void TrayTick()
+{
+    Metricas m;
+    AmostrarMetricas(m);
+
+    std::wstring tip = L"SystemInfoPro";
+    if (m.cpuPct >= 0) tip += L"  |  CPU " + NumW(m.cpuPct) + L"%";
+    if (m.ramPct >= 0) tip += L"  |  RAM " + NumW(m.ramPct) + L"%";
+    TrayTooltip(tip);
+
+    ULONGLONG agora = GetTickCount64();
+
+    // RAM acima de 95% (aviso a cada 10 min no maximo)
+    if (m.ramPct >= 95 && agora - g_alertaRam > 10 * 60 * 1000)
+    {
+        g_alertaRam = agora;
+        TrayBalao(L"⚠ Memoria RAM quase cheia",
+                  L"Uso atual: " + NumW(m.ramPct) + L"%. Feche programas para evitar travamentos.");
+    }
+
+    // GPU acima de 85 C (NVIDIA)
+    NvmlInfo nv;
+    if (NvmlConsultar(nv) && nv.temperaturaC >= 85 && agora - g_alertaTemp > 10 * 60 * 1000)
+    {
+        g_alertaTemp = agora;
+        TrayBalao(L"🌡 Temperatura alta na GPU",
+                  nv.nome + L" esta a " + NumW(nv.temperaturaC) + L" °C. Verifique a ventilacao.");
+    }
+
+    // Disco do sistema com menos de 5% livre (aviso a cada 30 min)
+    if (agora - g_alertaDisco > 30 * 60 * 1000)
+    {
+        wchar_t winDir[MAX_PATH];
+        GetWindowsDirectoryW(winDir, MAX_PATH);
+        wchar_t raiz[4] = { winDir[0], L':', L'\\', 0 };
+        ULARGE_INTEGER livre{}, total{};
+        if (GetDiskFreeSpaceExW(raiz, &livre, &total, nullptr) && total.QuadPart > 0)
+        {
+            int pctLivre = (int)(livre.QuadPart * 100 / total.QuadPart);
+            if (pctLivre < 5)
+            {
+                g_alertaDisco = agora;
+                TrayBalao(L"💾 Disco do sistema quase cheio",
+                          std::wstring(L"Unidade ") + raiz + L" com apenas " +
+                          FormatBytes(livre.QuadPart) + L" livres (" + NumW(pctLivre) + L"%).");
+            }
+        }
+    }
 }
 
 // ================= Montagem da arvore =================
@@ -573,6 +784,10 @@ static void MontarArvore()
     TreeAdd(rede, L"🔗 Conexoes TCP Ativas", PAGE_TCP);
     TreeAdd(rede, L"📁 Compartilhamentos de Rede", PAGE_SHARES);
 
+    HTREEITEM ferr = TreeAdd(TVI_ROOT, L"🧪 Ferramentas", PAGE_NONE, true);
+    TreeAdd(ferr, L"🚀 Benchmark do Sistema", PAGE_BENCH);
+    TreeAdd(ferr, L"📸 Snapshot e Comparacao", PAGE_SNAP);
+
     HTREEITEM raiz = TreeView_GetRoot(g_hTree);
     while (raiz)
     {
@@ -587,7 +802,7 @@ static void MontarArvore()
 namespace
 {
     struct ItemBarra { std::wstring rotulo; RECT rc; };
-    std::vector<ItemBarra> g_itensBarra = { { L"Arquivo", {} }, { L"Exibir", {} }, { L"Ajuda", {} } };
+    std::vector<ItemBarra> g_itensBarra = { { L"Arquivo", {} }, { L"Exibir", {} }, { L"Ferramentas", {} }, { L"Ajuda", {} } };
     int g_hotBarra = -1;
 
     void AbrirMenuBarra(int indice)
@@ -595,8 +810,9 @@ namespace
         HMENU menu = CreatePopupMenu();
         if (indice == 0)   // Arquivo
         {
-            AppendMenuW(menu, MF_STRING, IDM_EXPORT_TXT, L"📄  Exportar como TXT...");
-            AppendMenuW(menu, MF_STRING, IDM_EXPORT_HTML, L"🌐  Exportar como HTML...");
+            AppendMenuW(menu, MF_STRING, IDM_EXPORT_TXT, L"📄  Exportar Categoria como TXT...");
+            AppendMenuW(menu, MF_STRING, IDM_EXPORT_HTML, L"🌐  Exportar Categoria como HTML...");
+            AppendMenuW(menu, MF_STRING, IDM_EXPORT_FULL, L"🗂  Exportar Relatorio Completo (tudo)...");
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, IDM_SAIR, L"❌  Sair");
         }
@@ -605,6 +821,14 @@ namespace
             AppendMenuW(menu, MF_STRING, IDM_TEMA,
                 g_escuro ? L"☀  Mudar para Tema Claro" : L"🌙  Mudar para Tema Escuro");
             AppendMenuW(menu, MF_STRING, IDM_ATUALIZAR, L"🔄  Atualizar Categoria\tF5");
+        }
+        else if (indice == 2)   // Ferramentas
+        {
+            AppendMenuW(menu, MF_STRING | (BenchmarkEmExecucao() ? MF_GRAYED : 0),
+                        IDM_BENCH, L"🚀  Executar Benchmark");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_STRING, IDM_SNAP_CRIAR, L"📸  Criar Snapshot do Sistema...");
+            AppendMenuW(menu, MF_STRING, IDM_SNAP_COMP, L"🔍  Comparar com Snapshot...");
         }
         else                    // Ajuda
         {
@@ -829,6 +1053,8 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 
         MontarArvore();
         AplicarTema();
+        TrayCriar();
+        SetTimer(h, TIMER_TRAY, 5000, nullptr);
         return 0;
     }
     case WM_SIZE:
@@ -897,9 +1123,27 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         {
         case IDM_EXPORT_TXT:  ExportarRelatorio(false); break;
         case IDM_EXPORT_HTML: ExportarRelatorio(true); break;
+        case IDM_EXPORT_FULL: ExportarRelatorioCompleto(); break;
         case IDM_SAIR:        DestroyWindow(h); break;
         case IDM_TEMA:        g_escuro = !g_escuro; AplicarTema(); break;
         case IDM_ATUALIZAR:   if (g_paginaAtual != PAGE_NONE) CarregarPagina(g_paginaAtual); break;
+        case IDM_BENCH:
+            CarregarPagina(PAGE_BENCH);
+            BenchmarkIniciar(h);
+            CarregarPagina(PAGE_BENCH);   // mostra "executando..."
+            break;
+        case IDM_SNAP_CRIAR:  SnapshotCriar(h); break;
+        case IDM_SNAP_COMP:
+            CarregarPagina(PAGE_SNAP);
+            SnapshotComparar(h);
+            AjustarColunas();
+            break;
+        case IDM_TRAY_RESTAURAR:
+            ShowWindow(h, SW_SHOW);
+            ShowWindow(h, SW_RESTORE);
+            SetForegroundWindow(h);
+            break;
+        case IDM_TRAY_SAIR:   DestroyWindow(h); break;
         case IDM_SOBRE:
             MessageBoxW(h,
                 L"SystemInfoPro 2.0\n\n"
@@ -923,6 +1167,59 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
             if (g_paginaAtual == PAGE_REALTIME) LoadRealtime();
             else if (g_paginaAtual == PAGE_GRAPHS) GraficosTick(g_hGraf);
         }
+        else if (wp == TIMER_TRAY)
+        {
+            TrayTick();
+        }
+        return 0;
+
+    case WM_TRAYICON:
+        if (lp == WM_LBUTTONUP || lp == WM_LBUTTONDBLCLK)
+        {
+            ShowWindow(h, SW_SHOW);
+            ShowWindow(h, SW_RESTORE);
+            SetForegroundWindow(h);
+        }
+        else if (lp == WM_RBUTTONUP)
+        {
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, IDM_TRAY_RESTAURAR, L"🖥  Restaurar SystemInfoPro");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_STRING, IDM_TRAY_SAIR, L"❌  Sair");
+            POINT pt; GetCursorPos(&pt);
+            SetForegroundWindow(h);
+            TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, h, nullptr);
+            DestroyMenu(menu);
+        }
+        return 0;
+
+    case WM_SYSCOMMAND:
+        if ((wp & 0xFFF0) == SC_MINIMIZE)
+        {
+            ShowWindow(h, SW_HIDE);
+            if (!g_avisoTrayMostrado)
+            {
+                g_avisoTrayMostrado = true;
+                TrayBalao(L"SystemInfoPro continua ativo",
+                          L"Monitorando na bandeja. Clique no icone para restaurar.", NIIF_INFO);
+            }
+            return 0;
+        }
+        break;
+
+    case WM_APP_BENCH_ETAPA:
+    {
+        std::wstring txt = L"  ⏳ Benchmark: etapa " + NumW((int)wp) + L" de 6 - " +
+                           std::wstring(BenchmarkNomeEtapa((int)wp));
+        SendMessageW(g_hStatus, SB_SETTEXTW, 0, (LPARAM)txt.c_str());
+        if (g_paginaAtual == PAGE_BENCH) CarregarPagina(PAGE_BENCH);
+        return 0;
+    }
+    case WM_APP_BENCH_FIM:
+        SendMessageW(g_hStatus, SB_SETTEXTW, 0, (LPARAM)L"  SystemInfoPro - pronto");
+        if (g_paginaAtual == PAGE_BENCH) CarregarPagina(PAGE_BENCH);
+        TrayBalao(L"✅ Benchmark concluido",
+                  L"Os resultados estao na categoria 'Benchmark do Sistema'.", NIIF_INFO);
         return 0;
 
     case WM_GETMINMAXINFO:
@@ -934,6 +1231,8 @@ static LRESULT CALLBACK JanelaProc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
     }
     case WM_DESTROY:
         KillTimer(h, TIMER_REALTIME);
+        KillTimer(h, TIMER_TRAY);
+        TrayRemover();
         RealtimeShutdown();
         if (g_hFont) DeleteObject(g_hFont);
         if (g_hFontBusca) DeleteObject(g_hFontBusca);

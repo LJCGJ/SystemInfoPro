@@ -1,0 +1,40 @@
+// ============================================================
+//  SystemInfoPro - app.rc
+//  Informacoes de versao do executavel (aparece nas Propriedades
+//  do arquivo no Windows Explorer)
+//
+//  Para adicionar um icone proprio: coloque um arquivo "app.ico"
+//  nesta pasta e descomente a linha IDI_APP abaixo.
+// ============================================================
+#include <windows.h>
+
+// IDI_APP ICON "app.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     2,0,0,0
+PRODUCTVERSION  2,0,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS__WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041604B0"   // Portugues (Brasil), Unicode
+        BEGIN
+            VALUE "CompanyName",      "Projeto Open Source"
+            VALUE "FileDescription",  "SystemInfoPro - Painel de Informacoes do Sistema"
+            VALUE "FileVersion",      "2.0.0.0"
+            VALUE "InternalName",     "SystemInfoPro"
+            VALUE "LegalCopyright",   "Licenca MIT - Codigo Aberto e Gratuito"
+            VALUE "OriginalFilename", "SystemInfoPro.exe"
+            VALUE "ProductName",      "SystemInfoPro"
+            VALUE "ProductVersion",   "2.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0416, 1200
+    END
+END
